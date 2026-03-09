@@ -187,6 +187,7 @@ def main():
     print(f"Found {len(products)} products.")
 
     updates_made = 0
+    report_data = []
     
     for product in products:
         product_id = product.get("id")
@@ -237,12 +238,35 @@ def main():
                     success = update_shopify_variant_price(variant_id, new_price_clp)
                     if success:
                         updates_made += 1
+                        import datetime
+                        report_data.append({
+                            "Fecha": datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
+                            "Carta": card_name,
+                            "Set": set_code or '',
+                            "Foil": "Sí" if is_foil else "No",
+                            "Precio Anterior": current_price,
+                            "Precio Nuevo": new_price_clp
+                        })
                 else:
                     print(f" -> Price is already up to date ({current_price} CLP).")
             else:
                 print(f" -> No price found on Scryfall.")
 
     print(f"Finished. Updated {updates_made} variants.")
+    
+    import csv
+    # Save the report CSV
+    os.makedirs('static', exist_ok=True)
+    report_path = os.path.join('static', 'ultimo_reporte.csv')
+    try:
+        with open(report_path, 'w', newline='', encoding='utf-8') as f:
+            writer = csv.DictWriter(f, fieldnames=["Fecha", "Carta", "Set", "Foil", "Precio Anterior", "Precio Nuevo"])
+            writer.writeheader()
+            for row in report_data:
+                writer.writerow(row)
+        print(f"Report saved to {report_path}")
+    except Exception as e:
+        print(f"Failed to save report: {e}")
 
 if __name__ == "__main__":
     main()

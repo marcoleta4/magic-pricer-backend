@@ -924,6 +924,10 @@
         style="border-color:rgba(149,191,71,0.35); color:#95BF47">
         🛍️ Exportar Shopify
       </button>
+      <button class="btn btn-ghost" id="downloadReportBtn" onclick="downloadReport()"
+        style="border-color:rgba(74, 158, 255, 0.35); color:var(--blue-acc)">
+        📉 Descargar Reporte
+      </button>
     </div>
 
     <!-- SCHEDULE SETTINGS -->
@@ -1452,6 +1456,29 @@ Be precise. The Set Code and Collector Number are the most important fields.`;
         showToast("✅ Horario y margen actualizados. Próxima: " + data.next_update_utc);
       } catch(e) {
         alert("Error: " + e.message);
+      }
+    }
+
+    async function downloadReport() {
+      try {
+        const res = await fetch(`${API_BASE}/api/reporte`);
+        if (!res.ok) {
+           const data = await res.json().catch(() => ({}));
+           throw new Error(data.error || "No hay reporte disponible o hubo un error al obtenerlo.");
+        }
+        
+        // Convert response to blob and download
+        const blob = await res.blob();
+        const url = window.URL.createObjectURL(blob);
+        const a = document.createElement('a');
+        a.href = url;
+        a.download = "ultimo_reporte_precios.csv";
+        document.body.appendChild(a);
+        a.click();
+        window.URL.revokeObjectURL(url);
+        document.body.removeChild(a);
+      } catch(e) {
+        alert(e.message);
       }
     }
 

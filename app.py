@@ -235,6 +235,15 @@ def update_schedule():
         "next_update_utc": str(scheduler.get_job('daily_price_sync').next_run_time)
     })
 
+@app.route("/api/reporte", methods=["GET"])
+def download_report():
+    from flask import send_from_directory
+    report_path = os.path.join(os.path.dirname(__file__), 'static', 'ultimo_reporte.csv')
+    if not os.path.exists(report_path):
+        return jsonify({"error": "No hay ningún reporte generado aún. La actualización automática debe correr al menos una vez."}), 404
+        
+    return send_from_directory('static', 'ultimo_reporte.csv', as_attachment=True)
+
 
 @app.route("/api/add_card", methods=["POST"])
 def add_card_to_shopify():
