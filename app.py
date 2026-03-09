@@ -38,29 +38,52 @@ def add_metafield_to_product():
     data = request.json
     product_id = data.get('product_id')
     scryfall_id = data.get('scryfall_id')
+    rarity_en = data.get('rarity')
+    type_line_en = data.get('card_type')
 
     if not product_id or not scryfall_id:
         return jsonify({"error": "Faltan datos obligatorios (product_id o scryfall_id)"}), 400
 
     mf_url = f"https://{update_prices.SHOPIFY_STORE_URL}/admin/api/{update_prices.API_VERSION}/products/{product_id}/metafields.json"
-    mf_payload = {
-        "metafield": {
-            "namespace": "custom",
-            "key": "scryfall_id",
-            "value": str(scryfall_id),
-            "type": "single_line_text_field"
-        }
-    }
+    
+    RARITY_MAP = {"common": "Común", "uncommon": "Infrecuente", "rare": "Rara", "mythic": "Mítica", "special": "Especial", "bonus": "Bonus"}
+    TYPE_MAP = {"Creature": "Criatura", "Instant": "Instantáneo", "Sorcery": "Conjuro", "Artifact": "Artefacto", "Enchantment": "Encantamiento", "Land": "Tierra", "Planeswalker": "Planeswalker"}
 
-    try:
-        mf_res = update_prices.requests.post(mf_url, headers=headers, json=mf_payload)
-        mf_res.raise_for_status()
-        return jsonify({"message": "Metacampo añadido exitosamente"}), 201
-    except Exception as e:
-        error_msg = str(e)
-        if hasattr(e, 'response') and e.response is not None:
-            error_msg = e.response.text
-        return jsonify({"error": error_msg}), 500
+    metafields_to_add = [
+        {"key": "scryfall_id", "value": str(scryfall_id)}
+    ]
+
+    if rarity_en:
+        rarity_es = RARITY_MAP.get(rarity_en, rarity_en.capitalize() if isinstance(rarity_en, str) else str(rarity_en))
+        metafields_to_add.append({"key": "rareza", "value": rarity_es})
+
+    if type_line_en:
+        type_line_es = type_line_en
+        for en, es in TYPE_MAP.items():
+            type_line_es = type_line_es.replace(en, es)
+        metafields_to_add.append({"key": "card_type", "value": type_line_es})
+
+    errors_mf = []
+    for mf_data in metafields_to_add:
+        mf_payload = {
+            "metafield": {
+                "namespace": "custom",
+                "key": mf_data["key"],
+                "value": mf_data["value"],
+                "type": "single_line_text_field"
+            }
+        }
+        try:
+            mf_res = update_prices.requests.post(mf_url, headers=headers, json=mf_payload)
+            if mf_res.status_code != 201:
+                errors_mf.append(mf_data["key"])
+        except Exception as e:
+            errors_mf.append(mf_data["key"])
+
+    if errors_mf:
+        return jsonify({"error": f"Metacampos fallidos: {', '.join(errors_mf)}"}), 500
+
+    return jsonify({"message": "Metacampos añadidos exitosamente"}), 201
 
 
 def scheduled_price_update():

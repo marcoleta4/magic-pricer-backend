@@ -1474,7 +1474,8 @@ Be precise. The Set Code and Collector Number are the most important fields.`;
           body: JSON.stringify({ 
             product_id: res.shopify_product_id, 
             scryfall_id: res.card.id,
-            rarity: res.card.rarity
+            rarity: res.card.rarity,
+            card_type: res.card.type_line
           })
         });
         
