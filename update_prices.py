@@ -14,6 +14,9 @@ HEADERS = {
     "Content-Type": "application/json"
 }
 
+# Global margin used for updates
+DEFAULT_MARGIN = float(os.environ.get("DEFAULT_MARGIN", "1.30"))
+
 def get_shopify_access_token():
     """
     Get access token from env or using Shopify's Client Credentials Grant flow.
@@ -193,10 +196,8 @@ def main():
         product_id = product.get("id")
         card_name = product.get("title")
         
-        try:
-            default_margin = float(os.getenv("DEFAULT_MARGIN", "1.30"))
-        except:
-            default_margin = 1.30
+        # Use the global margin from this module
+        default_margin = DEFAULT_MARGIN
             
         # Intentamos obtener el margen personalizado guardado en un metacampo
         custom_margin_str = get_product_metafield(product_id, "custom", "custom_margin")

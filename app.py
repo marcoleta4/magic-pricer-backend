@@ -1,10 +1,107 @@
-import os
-import base64
-from flask import Flask, request, jsonify, render_template
-from flask_cors import CORS
-from apscheduler.schedulers.background import BackgroundScheduler
-import pytz
 from datetime import datetime
+from supabase import create_client, Client
+
+# Configuración de Supabase
+SUPABASE_URL = os.environ.get("SUPABASE_URL")
+SUPABASE_KEY = os.environ.get("SUPABASE_KEY")
+supabase: Client = None
+
+if SUPABASE_URL and SUPABASE_KEY:
+    try:
+        supabase = create_client(SUPABASE_URL, SUPABASE_KEY)
+        print("Conectado a Supabase correctamente.")
+    except Exception as e:
+        print(f"Error al conectar con Supabase: {e}")
+
+def get_config():
+    """Obtiene la configuración desde Supabase o usa valores por defecto."""
+    default_cfg = {"hour": 6, "minute": 0, "margin": 1.30}
+    if not supabase:
+        return default_cfg
+    try:
+        response = supabase.table("config_settings").select("*").eq("id", 1).execute()
+        if response.data:
+            return response.data[0]
+    except Exception as e:
+        print(f"Error al leer config de Supabase: {e}")
+    return default_cfg
+
+def save_config(hour, minute, margin=None):
+    """Guarda la configuración en Supabase."""
+    if not supabase:
+        return False
+    try:
+        data = {"id": 1, "hour": int(hour), "minute": int(minute)}
+        if margin is not None:
+            data["margin"] = float(margin)
+        supabase.table("config_settings").upsert(data).execute()
+        return True
+    except Exception as e:
+        print(f"Error al guardar config en Supabase: {e}")
+        return False
+
+def sync_metafield_helper(product_id, namespace, key, value):
+    """Sincroniza un metacampo usando lógica Upsert y tipos correctos."""
+    token = update_prices.get_shopify_access_token()
+    if not token:
+        return False
+    
+    headers = {
+        "X-Shopify-Access-Token": token,
+        "Content-Type": "application/json"
+    }
+    
+    # Determinar tipo y valor real
+    mf_type = "single_line_text_field"
+    actual_value = str(value)
+    
+    if key == "foil":
+        mf_type = "boolean"
+        if isinstance(value, str):
+            actual_value = value.lower() == "true" or value == "Verdadero"
+        else:
+            actual_value = bool(value)
+    elif key == "coste_de_mana_convertido" or key == "cmc":
+        # Shopify tiene tipo 'number_integer' o 'number_decimal'
+        # Pero podemos seguir usando texto o cambiarlo. Mantengamos texto por ahora o usemos integer.
+        pass
+
+    payload = {
+        "metafield": {
+            "namespace": namespace,
+            "key": key,
+            "value": actual_value,
+            "type": mf_type
+        }
+    }
+
+    # Buscar si ya existe para hacer PUT en lugar de POST
+    try:
+        mf_check_url = f"https://{update_prices.SHOPIFY_STORE_URL}/admin/api/{update_prices.API_VERSION}/products/{product_id}/metafields.json"
+        check_res = update_prices.requests.get(mf_check_url, headers=headers)
+        existing_id = None
+        if check_res.status_code == 200:
+            mfs = check_res.json().get('metafields', [])
+            for mf in mfs:
+                if mf['key'] == key and mf['namespace'] == namespace:
+                    existing_id = mf['id']
+                    break
+        
+        if existing_id:
+            url = f"https://{update_prices.SHOPIFY_STORE_URL}/admin/api/{update_prices.API_VERSION}/products/{product_id}/metafields/{existing_id}.json"
+            res = update_prices.requests.put(url, headers=headers, json=payload)
+        else:
+            url = f"https://{update_prices.SHOPIFY_STORE_URL}/admin/api/{update_prices.API_VERSION}/products/{product_id}/metafields.json"
+            res = update_prices.requests.post(url, headers=headers, json=payload)
+        
+        if res.status_code in [200, 201]:
+            return True
+        else:
+            print(f"Error Shopfiy Metafield ({key}): {res.status_code} - {res.text}")
+            return False
+    except Exception as e:
+        print(f"Error sync_metafield_helper: {e}")
+        return False
 
 # Importar las funciones de nuestro script de actualizacion
 import update_prices
@@ -21,116 +118,60 @@ def serve_index():
     return render_template('index.html', GEMINI_API_KEY=api_key)
 
 @app.route('/api/add_metafield', methods=['POST'])
-def add_metafield_to_product():
-    """
-    Agrega manualmente el metacampo 'scryfall_id' a un producto existente.
-    Esto se usa como alternativa porque la API bloquea metacampos síncronos en categorías estrictas.
-    """
-    token = update_prices.get_shopify_access_token()
-    if not token:
-        return jsonify({"error": "No se pudo obtener el token de acceso de Shopify"}), 500
-
-    headers = {
-        "X-Shopify-Access-Token": token,
-        "Content-Type": "application/json"
-    }
-
+def add_metafield_endpoint():
     data = request.json
     product_id = data.get('product_id')
-    scryfall_id = data.get('scryfall_id')
-    rarity_en = data.get('rarity')
-    type_line_en = data.get('card_type')
-    cmc = data.get('cmc')
-    is_foil_json = data.get('foil')
-    legalities = data.get('legalities', {})
-    set_single = data.get('set_single')
-    colors = data.get('colors', [])
-    mana_cost = data.get('mana_cost', '')
-
-    if not product_id or not scryfall_id:
-        return jsonify({"error": "Faltan datos obligatorios (product_id o scryfall_id)"}), 400
-
-    mf_url = f"https://{update_prices.SHOPIFY_STORE_URL}/admin/api/{update_prices.API_VERSION}/products/{product_id}/metafields.json"
     
-    RARITY_MAP = {"common": "Común", "uncommon": "Infrecuente", "rare": "Rara", "mythic": "Mítica", "special": "Especial", "bonus": "Bonus"}
-    TYPE_MAP = {"Creature": "Criatura", "Instant": "Instantáneo", "Sorcery": "Conjuro", "Artifact": "Artefacto", "Enchantment": "Encantamiento", "Land": "Tierra", "Planeswalker": "Planeswalker"}
-    COLOR_MAP = {"W": "Blanco", "U": "Azul", "B": "Negro", "R": "Rojo", "G": "Verde"}
+    # Extraer campos
+    metafields_data = {
+        "scryfall_id": data.get('scryfall_id'),
+        "rareza": data.get('rarity'),
+        "card_type": data.get('card_type'),
+        "coste_de_mana_convertido": data.get('cmc'),
+        "foil": data.get('foil'),
+        "formato": data.get('formato'),
+        "set_single": data.get('set_single'),
+        "color": data.get('color')
+    }
 
-    metafields_to_add = [
-        {"key": "scryfall_id", "value": str(scryfall_id)}
-    ]
+    if not product_id:
+        return jsonify({"error": "Faltan product_id"}), 400
 
-    if rarity_en:
-        rarity_es = RARITY_MAP.get(rarity_en, rarity_en.capitalize() if isinstance(rarity_en, str) else str(rarity_en))
-        metafields_to_add.append({"key": "rareza", "value": rarity_es})
-
-    if type_line_en:
-        type_line_es = type_line_en
-        for en, es in TYPE_MAP.items():
-            type_line_es = type_line_es.replace(en, es)
-        metafields_to_add.append({"key": "card_type", "value": type_line_es})
+    errors = []
+    for k, v in metafields_data.items():
+        if v is None: continue
         
-    if cmc is not None:
-        metafields_to_add.append({"key": "coste_de_mana_convertido", "value": str(cmc)})
+        # Mapeo de traducciones si no vienen traducidas
+        if k == "rareza":
+            MAP = {"common": "Común", "uncommon": "Infrecuente", "rare": "Rara", "mythic": "Mítica"}
+            v = MAP.get(v, v)
         
-    if is_foil_json is True or is_foil_json is False: # Make sure string format is matched properly as it came from True/False in python to Javascript
-        is_foil_val = "Verdadero" if is_foil_json else "Falso"
-        metafields_to_add.append({"key": "foil", "value": is_foil_val})
+        success = sync_metafield_helper(product_id, "custom", k, v)
+        if not success:
+            errors.append(k)
 
-    if legalities:
-        formats_legal = [f.capitalize() for f, leg in legalities.items() if leg == 'legal']
-        formats_str = " • ".join(formats_legal[:5]) if formats_legal else ""
-        if formats_str:
-            metafields_to_add.append({"key": "formato", "value": formats_str})
+    if errors:
+        return jsonify({"error": f"Fallo en: {', '.join(errors)}"}), 500
 
-    if set_single:
-        metafields_to_add.append({"key": "set_single", "value": str(set_single).lower()})
-
-    # Color logic
-    if colors or mana_cost == "":
-        if not colors and mana_cost == "": 
-            colors_str = "Incoloro"
-        elif len(colors) > 1:
-            colors_translated = [COLOR_MAP.get(c, c) for c in colors]
-            colors_str = "Multicolor • " + " • ".join(colors_translated)
-        else:
-            colors_str = " • ".join([COLOR_MAP.get(c, c) for c in colors]) if colors else "Incoloro"
-        metafields_to_add.append({"key": "color", "value": colors_str})
-
-    errors_mf = []
-    for mf_data in metafields_to_add:
-        mf_payload = {
-            "metafield": {
-                "namespace": "custom",
-                "key": mf_data["key"],
-                "value": mf_data["value"],
-                "type": "single_line_text_field"
-            }
-        }
-        try:
-            mf_res = update_prices.requests.post(mf_url, headers=headers, json=mf_payload)
-            if mf_res.status_code != 201:
-                errors_mf.append(mf_data["key"])
-        except Exception as e:
-            errors_mf.append(mf_data["key"])
-
-    if errors_mf:
-        return jsonify({"error": f"Metacampos fallidos: {', '.join(errors_mf)}"}), 500
-
-    return jsonify({"message": "Metacampos añadidos exitosamente"}), 201
+    return jsonify({"message": "Metacampos sincronizados correctamente"}), 201
 
 
 def scheduled_price_update():
     print(f"--- Running Scheduled Price Update at {datetime.now()} ---")
+    # Cargar margen global desde Supabase antes de correr
+    cfg = get_config()
+    os.environ["DEFAULT_MARGIN"] = str(cfg.get("margin", 1.30))
+    update_prices.DEFAULT_MARGIN = float(cfg.get("margin", 1.30))
     update_prices.main()
     print("--- Scheduled Price Update Completed ---")
 
 # Configurar el programador (Scheduler)
 scheduler = BackgroundScheduler(timezone=pytz.utc)
 
-# Leer a que hora correr (en UTC) desde las variables de entorno, por defecto a las 06:00 UTC (3 AM CLST)
-UPDATE_HOUR = int(os.environ.get("UPDATE_HOUR", 6))
-UPDATE_MINUTE = int(os.environ.get("UPDATE_MINUTE", 0))
+# Leer config inicial de Supabase
+config = get_config()
+UPDATE_HOUR = config.get("hour", 6)
+UPDATE_MINUTE = config.get("minute", 0)
 
 scheduler.add_job(
     scheduled_price_update,
@@ -187,10 +228,6 @@ def health_check():
 
 @app.route("/api/update_schedule", methods=["POST"])
 def update_schedule():
-    """
-    Endpoint para cambiar la hora de la actualización automática desde el HTML y el margen global.
-    Recibe la hora (0-23), minuto (0-59), y margen (float).
-    """
     data = request.json
     if not data or 'hour' not in data or 'minute' not in data:
         return jsonify({"error": "Parámetros 'hour' y 'minute' son requeridos"}), 400
@@ -202,27 +239,10 @@ def update_schedule():
     if not (0 <= new_hour <= 23) or not (0 <= new_minute <= 59):
          return jsonify({"error": "Hora (0-23) o minuto (0-59) inválidos"}), 400
 
-    # Guardar en .env para que persista
-    env_file = ".env"
-    lines = []
-    if os.path.exists(env_file):
-        with open(env_file, 'r') as f:
-            lines = f.readlines()
-            
-    # Remove existing UPDATE_HOUR, UPDATE_MINUTE, DEFAULT_MARGIN
-    lines = [l for l in lines if not l.startswith(('UPDATE_HOUR=', 'UPDATE_MINUTE=', 'DEFAULT_MARGIN='))]
+    # Guardar en Supabase
+    success = save_config(new_hour, new_minute, new_margin)
     
-    lines.append(f"UPDATE_HOUR={new_hour}\n")
-    lines.append(f"UPDATE_MINUTE={new_minute}\n")
-    if new_margin:
-        try:
-            val = float(new_margin)
-            lines.append(f"DEFAULT_MARGIN={val}\n")
-        except ValueError:
-            pass
-            
-    with open(env_file, 'w') as f:
-        f.writelines(lines)
+    # Reprogramar
     scheduler.reschedule_job(
         'daily_price_sync',
         trigger='cron',
@@ -231,9 +251,15 @@ def update_schedule():
     )
     
     return jsonify({
-        "message": "Horario actualizado",
+        "message": "Horario actualizado en DB y Scheduler",
+        "supabase_sync": success,
         "next_update_utc": str(scheduler.get_job('daily_price_sync').next_run_time)
     })
+
+@app.route("/api/get_schedule", methods=["GET"])
+def get_schedule():
+    cfg = get_config()
+    return jsonify(cfg)
 
 @app.route("/api/reporte", methods=["GET"])
 def download_report():
@@ -393,71 +419,43 @@ def add_card_to_shopify():
                     }
                     update_prices.requests.post(inv_url, headers=headers, json=inv_payload)
 
-        # 6. Intentar agregar metacampos extendidos
+        # 6. Sincronizar metacampos detallados usando el helper (Upsert + Tipos)
         metafield_warning = None
         if card.get('id'):
-            mf_url = f"https://{update_prices.SHOPIFY_STORE_URL}/admin/api/{update_prices.API_VERSION}/products/{product_id}/metafields.json"
-            
-            # Mapas de traducción
-            RARITY_MAP = {"common": "Común", "uncommon": "Infrecuente", "rare": "Rara", "mythic": "Mítica", "special": "Especial", "bonus": "Bonus"}
+            # Preparar datos para sincronizar
+            # Traducciones básicas
+            RARITY_MAP = {"common": "Común", "uncommon": "Infrecuente", "rare": "Rara", "mythic": "Mítica"}
             COLOR_MAP = {"W": "Blanco", "U": "Azul", "B": "Negro", "R": "Rojo", "G": "Verde"}
-            TYPE_MAP = {"Creature": "Criatura", "Instant": "Instantáneo", "Sorcery": "Conjuro", "Artifact": "Artefacto", "Enchantment": "Encantamiento", "Land": "Tierra", "Planeswalker": "Planeswalker"}
-
-            # Extraer/Traducir datos
-            rarity_en = card.get('rarity', 'common')
-            rarity_es = RARITY_MAP.get(rarity_en, rarity_en.capitalize())
             
-            type_line_en = card.get('type_line', '')
-            type_line_es = type_line_en
-            for en, es in TYPE_MAP.items():
-                type_line_es = type_line_es.replace(en, es)
+            r_en = card.get('rarity', 'common')
+            r_es = RARITY_MAP.get(r_en, r_en.capitalize())
             
-            cmc = str(card.get('cmc', 0))
-            is_foil_val = "Verdadero" if card.get('foil') else "Falso"
-            
-            legalities = card.get('legalities', {})
-            formats_legal = [f.capitalize() for f, leg in legalities.items() if leg == 'legal']
-            formats_str = " • ".join(formats_legal[:5]) # Limitar a los primeros 5 para no saturar
-
-            set_code = card.get('set', '').lower()
-            
-            colors = card.get('colors', [])
-            if not colors and 'mana_cost' in card and card['mana_cost'] == "": # Tierras incoloras
-                 colors_str = "Incoloro"
-            elif len(colors) > 1:
-                colors_translated = [COLOR_MAP.get(c, c) for c in colors]
-                colors_str = "Multicolor • " + " • ".join(colors_translated)
+            c_list = card.get('colors', [])
+            if not c_list and card.get('mana_cost') == "":
+                c_str = "Incoloro"
+            elif len(c_list) > 1:
+                c_str = "Multicolor"
             else:
-                colors_str = " • ".join([COLOR_MAP.get(c, c) for c in colors]) if colors else "Incoloro"
+                c_str = COLOR_MAP.get(c_list[0], c_list[0]) if c_list else "Incoloro"
 
-            metafields_to_add = [
-                {"key": "scryfall_id", "value": str(card.get('id'))},
-                {"key": "custom_margin", "value": str(margin)},
-                {"key": "rareza", "value": rarity_es},
-                {"key": "card_type", "value": type_line_es},
-                {"key": "coste_de_mana_convertido", "value": cmc},
-                {"key": "foil", "value": is_foil_val},
-                {"key": "formato", "value": formats_str},
-                {"key": "set_single", "value": set_code},
-                {"key": "color", "value": colors_str}
-            ]
+            metafields_to_sync = {
+                "scryfall_id": card.get('id'),
+                "rareza": r_es,
+                "card_type": card.get('type_line'),
+                "coste_de_mana_convertido": str(card.get('cmc', 0)),
+                "foil": card.get('foil', False),
+                "set_single": card.get('set', '').lower(),
+                "color": c_str
+            }
 
             errors_mf = []
-            for mf_data in metafields_to_add:
-                mf_payload = {
-                    "metafield": {
-                        "namespace": "custom",
-                        "key": mf_data["key"],
-                        "value": mf_data["value"],
-                        "type": "single_line_text_field"
-                    }
-                }
-                mf_res = update_prices.requests.post(mf_url, headers=headers, json=mf_payload)
-                if mf_res.status_code != 201:
-                    errors_mf.append(mf_data["key"])
-
+            for k, v in metafields_to_sync.items():
+                if v is None: continue
+                if not sync_metafield_helper(product_id, "custom", k, v):
+                    errors_mf.append(k)
+            
             if errors_mf:
-                metafield_warning = f"Producto creado, pero fallaron algunos metacampos: {', '.join(errors_mf)}. Revisa las restricciones de categoría en Shopify."
+                metafield_warning = f"Algunos metacampos fallaron: {', '.join(errors_mf)}"
 
         return jsonify({
             "message": "Product created successfully",
