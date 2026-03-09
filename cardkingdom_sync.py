@@ -2,6 +2,7 @@ import requests
 import json
 import os
 import time
+import gc
 
 CACHE_FILE = "ck_cache.json"
 CK_API_URL = "https://api.cardkingdom.com/api/v2/pricelist"
@@ -13,49 +14,55 @@ def download_pricelist():
         "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36"
     }
     try:
-        response = requests.get(url, headers=headers, timeout=60)
-        if response.status_code == 200:
-            content_type = response.headers.get('Content-Type', 'unknown')
-            content_len = len(response.content)
-            print(f"Respuesta recibida: {content_type}, Tamaño: {content_len} bytes")
+        # 1. Descargar a archivo temporal para no agotar la RAM
+        temp_raw_file = "ck_raw.json"
+        print(f"Streaming Card Kingdom pricelist to {temp_raw_file}...")
+        
+        with requests.get(url, headers=headers, timeout=60, stream=True) as r:
+            r.raise_for_status()
+            with open(temp_raw_file, 'wb') as f:
+                for chunk in r.iter_content(chunk_size=8192):
+                    f.write(chunk)
+        
+        print(f"Descarga finalizada. Procesando archivo de {os.path.getsize(temp_raw_file)} bytes...")
+        
+        # 2. Cargar y procesar (usamos una carga controlada si es posible)
+        with open(temp_raw_file, 'r', encoding='utf-8') as f:
+            data = json.load(f)
+        
+        # Borrar el archivo raw inmediatamente para liberar espacio
+        if os.path.exists(temp_raw_file):
+            os.remove(temp_raw_file)
+        
+        gc.collect() # Forzar liberación de memoria del buffer de lectura
+
+        raw_cards = []
+        if isinstance(data, dict):
+            raw_cards = data.get("data", [])
+        elif isinstance(data, list):
+            raw_cards = data
+        
+        # Liberar data original si es posible
+        del data
+        gc.collect()
+        
+        # 3. Construir caché optimizado
+        processed_cache = {}
+        for i, card in enumerate(raw_cards):
+            name = card.get("nm") or card.get("name")
+            edition = card.get("edition")
+            price = card.get("sell_price") or card.get("price")
             
-            data = response.json()
-            # La API v2 puede devolver un dict con "data" o una lista directamente
-            raw_cards = []
-            if isinstance(data, dict):
-                print(f"Estructura dict detectada. Claves: {list(data.keys())}")
-                raw_cards = data.get("data", [])
-            elif isinstance(data, list):
-                print(f"Estructura list detectada. Items: {len(data)}")
-                raw_cards = data
-            
-            print(f"Procesando {len(raw_cards)} cartas...")
-            
-            # Procesar para búsqueda rápida: "Nombre|Edicion|Foil": precio
-            processed_cache = {}
-            for i, card in enumerate(raw_cards):
-                # v2 usa nm para name, edition para edition, sell_price para el precio
-                name = card.get("nm") or card.get("name")
-                edition = card.get("edition")
-                price = card.get("sell_price") or card.get("price")
-                
-                if name and price:
-                    is_foil = str(card.get("is_foil")).lower() == "true" or card.get("is_foil") is True
-                    # Normalizar nombres para evitar fallos por espacios/caracteres
-                    key = f"{name.strip()}|{edition.strip() if edition else ''}|{'foil' if is_foil else 'non'}"
-                    processed_cache[key] = float(price)
-                
-                if i == 0:
-                    print(f"Ejemplo de carta 0: {card}")
-            
-            with open(CACHE_FILE, "w", encoding="utf-8") as f:
-                json.dump(processed_cache, f)
-            
-            print(f"Sincronización de Card Kingdom completada. {len(processed_cache)} entradas guardadas.")
-            return True
-        else:
-            print(f"Error al descargar de CK: {response.status_code}")
-            return False
+            if name and price:
+                is_foil = str(card.get("is_foil")).lower() == "true" or card.get("is_foil") is True
+                key = f"{name.strip()}|{edition.strip() if edition else ''}|{'foil' if is_foil else 'non'}"
+                processed_cache[key] = float(price)
+        
+        with open(CACHE_FILE, "w", encoding="utf-8") as f:
+            json.dump(processed_cache, f)
+        
+        print(f"Sincronización CK exitosa: {len(processed_cache)} entradas.")
+        return True
     except Exception as e:
         print(f"Excepción en sincronización CK: {e}")
         return False
