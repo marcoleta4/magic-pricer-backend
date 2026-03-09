@@ -1,5 +1,4 @@
-import os
-from flask import Flask, request, jsonify
+from flask import Flask, request, jsonify, render_template
 from flask_cors import CORS
 from apscheduler.schedulers.background import BackgroundScheduler
 import pytz
@@ -11,6 +10,10 @@ import update_prices
 app = Flask(__name__)
 # Enable CORS so the local index.html can send requests to this server
 CORS(app)
+
+@app.route('/')
+def serve_index():
+    return render_template('index.html')
 
 @app.route('/api/add_metafield', methods=['POST'])
 def add_metafield_to_product():

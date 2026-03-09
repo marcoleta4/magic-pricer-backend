@@ -1,0 +1,1851 @@
+<!DOCTYPE html>
+<html lang="es">
+
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Magic Card Identifier — Magicretion</title>
+  <meta name="description"
+    content="Identificá cartas Magic: The Gathering desde fotos. Obtené el ID exacto de Scryfall, edición, rareza y precio de mercado." />
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link
+    href="https://fonts.googleapis.com/css2?family=Cinzel:wght@400;600;700&family=Inter:wght@300;400;500;600&display=swap"
+    rel="stylesheet" />
+  <script src="https://cdn.sheetjs.com/xlsx-0.20.1/package/dist/xlsx.full.min.js"></script>
+  <style>
+    :root {
+      --bg-deep: #0a0b10;
+      --bg-card: #111318;
+      --bg-glass: rgba(255, 255, 255, 0.04);
+      --border: rgba(255, 255, 255, 0.08);
+      --gold: #c9a84c;
+      --gold-light: #f0d080;
+      --gold-glow: rgba(201, 168, 76, 0.25);
+      --blue-acc: #4a9eff;
+      --text: #e8e8f0;
+      --text-muted: #7a7a9a;
+      --common: #b0b8c8;
+      --uncommon: #80c0a0;
+      --rare: #d4a820;
+      --mythic: #e06030;
+      --error: #e05050;
+      --success: #50c080;
+      --radius: 14px;
+      --radius-sm: 8px;
+    }
+
+    *,
+    *::before,
+    *::after {
+      box-sizing: border-box;
+      margin: 0;
+      padding: 0;
+    }
+
+    body {
+      font-family: 'Inter', sans-serif;
+      background: var(--bg-deep);
+      color: var(--text);
+      min-height: 100vh;
+      background-image:
+        radial-gradient(ellipse 80% 40% at 50% -10%, rgba(74, 158, 255, 0.12) 0%, transparent 60%),
+        radial-gradient(ellipse 60% 30% at 80% 110%, rgba(201, 168, 76, 0.08) 0%, transparent 50%);
+    }
+
+    /* ─── HEADER ─── */
+    header {
+      text-align: center;
+      padding: 52px 24px 32px;
+      position: relative;
+    }
+
+    header::after {
+      content: '';
+      display: block;
+      width: 120px;
+      height: 2px;
+      background: linear-gradient(90deg, transparent, var(--gold), transparent);
+      margin: 24px auto 0;
+    }
+
+    .header-title {
+      font-family: 'Cinzel', serif;
+      font-size: clamp(1.8rem, 5vw, 3rem);
+      font-weight: 700;
+      background: linear-gradient(135deg, var(--gold-light), var(--gold), #a07020);
+      -webkit-background-clip: text;
+      -webkit-text-fill-color: transparent;
+      background-clip: text;
+      letter-spacing: 0.04em;
+      line-height: 1.2;
+    }
+
+    .header-sub {
+      margin-top: 10px;
+      color: var(--text-muted);
+      font-size: 0.95rem;
+      font-weight: 400;
+    }
+
+    /* ─── LAYOUT ─── */
+    .container {
+      max-width: 1200px;
+      margin: 0 auto;
+      padding: 0 20px 60px;
+    }
+
+    /* ─── API KEY SECTION ─── */
+    .api-key-section {
+      background: var(--bg-glass);
+      border: 1px solid var(--border);
+      border-radius: var(--radius);
+      padding: 20px 24px;
+      margin-bottom: 28px;
+      display: flex;
+      align-items: center;
+      gap: 14px;
+      flex-wrap: wrap;
+      backdrop-filter: blur(10px);
+    }
+
+    .api-key-section label {
+      font-size: 0.85rem;
+      color: var(--text-muted);
+      white-space: nowrap;
+      font-weight: 500;
+    }
+
+    .api-key-section .key-row {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      flex: 1;
+      min-width: 260px;
+    }
+
+    .api-key-section input[type="password"],
+    .api-key-section input[type="text"] {
+      flex: 1;
+      background: rgba(255, 255, 255, 0.05);
+      border: 1px solid var(--border);
+      border-radius: var(--radius-sm);
+      color: var(--text);
+      font-family: 'Inter', monospace;
+      font-size: 0.85rem;
+      padding: 9px 14px;
+      outline: none;
+      transition: border-color 0.2s;
+    }
+
+    .api-key-section input:focus {
+      border-color: var(--gold);
+    }
+
+    .key-status {
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+      font-size: 0.8rem;
+      padding: 5px 12px;
+      border-radius: 99px;
+      font-weight: 500;
+    }
+
+    .key-status.ok {
+      background: rgba(80, 192, 128, 0.15);
+      color: var(--success);
+    }
+
+    .key-status.err {
+      background: rgba(224, 80, 80, 0.15);
+      color: var(--error);
+    }
+
+    .key-status.idle {
+      background: rgba(122, 122, 154, 0.15);
+      color: var(--text-muted);
+    }
+
+    .toggle-show {
+      background: none;
+      border: 1px solid var(--border);
+      border-radius: var(--radius-sm);
+      color: var(--text-muted);
+      cursor: pointer;
+      font-size: 0.75rem;
+      padding: 7px 10px;
+      transition: all 0.2s;
+      white-space: nowrap;
+    }
+
+    .toggle-show:hover {
+      border-color: var(--gold);
+      color: var(--gold);
+    }
+
+    .api-hint {
+      font-size: 0.75rem;
+      color: var(--text-muted);
+      width: 100%;
+      margin-top: -4px;
+    }
+
+    .api-hint a {
+      color: var(--blue-acc);
+      text-decoration: none;
+    }
+
+    .api-hint a:hover {
+      text-decoration: underline;
+    }
+
+    /* ─── UPLOAD AREA ─── */
+    .upload-area {
+      border: 2px dashed rgba(201, 168, 76, 0.35);
+      border-radius: var(--radius);
+      padding: 48px 24px;
+      text-align: center;
+      cursor: pointer;
+      transition: all 0.3s ease;
+      background: var(--bg-glass);
+      backdrop-filter: blur(10px);
+      position: relative;
+      overflow: hidden;
+    }
+
+    .upload-area::before {
+      content: '';
+      position: absolute;
+      inset: 0;
+      background: radial-gradient(ellipse at 50% 0%, var(--gold-glow) 0%, transparent 70%);
+      opacity: 0;
+      transition: opacity 0.3s;
+    }
+
+    .upload-area:hover,
+    .upload-area.drag-over {
+      border-color: var(--gold);
+      background: rgba(201, 168, 76, 0.05);
+    }
+
+    .upload-area:hover::before,
+    .upload-area.drag-over::before {
+      opacity: 1;
+    }
+
+    .upload-icon {
+      font-size: 3rem;
+      margin-bottom: 16px;
+      display: block;
+      filter: drop-shadow(0 0 12px var(--gold-glow));
+    }
+
+    .upload-title {
+      font-family: 'Cinzel', serif;
+      font-size: 1.1rem;
+      color: var(--gold);
+      margin-bottom: 8px;
+    }
+
+    .upload-sub {
+      color: var(--text-muted);
+      font-size: 0.88rem;
+    }
+
+    .upload-sub strong {
+      color: var(--text);
+    }
+
+    #fileInput {
+      display: none;
+    }
+
+    /* ─── CONTROLS ─── */
+    .controls {
+      display: flex;
+      gap: 12px;
+      margin-top: 20px;
+      flex-wrap: wrap;
+      justify-content: center;
+    }
+
+    .btn {
+      font-family: 'Inter', sans-serif;
+      font-size: 0.9rem;
+      font-weight: 600;
+      padding: 12px 28px;
+      border-radius: var(--radius-sm);
+      border: none;
+      cursor: pointer;
+      transition: all 0.25s ease;
+      letter-spacing: 0.02em;
+      display: inline-flex;
+      align-items: center;
+      gap: 8px;
+    }
+
+    .btn-primary {
+      background: linear-gradient(135deg, var(--gold), #a07020);
+      color: #0a0b10;
+      box-shadow: 0 4px 20px var(--gold-glow);
+    }
+
+    .btn-primary:hover:not(:disabled) {
+      transform: translateY(-2px);
+      box-shadow: 0 8px 30px rgba(201, 168, 76, 0.4);
+    }
+
+    .btn-primary:disabled {
+      opacity: 0.4;
+      cursor: not-allowed;
+      transform: none;
+    }
+
+    .btn-ghost {
+      background: var(--bg-glass);
+      color: var(--text-muted);
+      border: 1px solid var(--border);
+    }
+
+    .btn-ghost:hover:not(:disabled) {
+      border-color: var(--gold);
+      color: var(--gold);
+    }
+
+    .btn-ghost:disabled {
+      opacity: 0.3;
+      cursor: not-allowed;
+    }
+
+    /* ─── QUEUE PREVIEW ─── */
+    .queue-preview {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 10px;
+      margin-top: 20px;
+      justify-content: center;
+    }
+
+    .queue-thumb {
+      position: relative;
+      width: 72px;
+      height: 100px;
+      border-radius: 6px;
+      overflow: hidden;
+      border: 2px solid var(--border);
+      transition: border-color 0.2s;
+      cursor: pointer;
+    }
+
+    .queue-thumb:hover {
+      border-color: var(--error);
+    }
+
+    .queue-thumb img {
+      width: 100%;
+      height: 100%;
+      object-fit: cover;
+    }
+
+    .queue-thumb .remove-btn {
+      position: absolute;
+      top: 3px;
+      right: 3px;
+      background: rgba(0, 0, 0, 0.7);
+      border: none;
+      border-radius: 50%;
+      color: #fff;
+      width: 18px;
+      height: 18px;
+      font-size: 10px;
+      cursor: pointer;
+      display: none;
+      align-items: center;
+      justify-content: center;
+    }
+
+    .queue-thumb:hover .remove-btn {
+      display: flex;
+    }
+
+    .queue-count {
+      text-align: center;
+      margin-top: 10px;
+      font-size: 0.82rem;
+      color: var(--text-muted);
+    }
+
+    /* ─── PROGRESS BAR ─── */
+    .progress-bar-wrap {
+      display: none;
+      margin-top: 20px;
+      background: rgba(255, 255, 255, 0.05);
+      border-radius: 99px;
+      overflow: hidden;
+      height: 6px;
+    }
+
+    .progress-bar-inner {
+      height: 100%;
+      background: linear-gradient(90deg, var(--gold), var(--gold-light));
+      border-radius: 99px;
+      transition: width 0.4s ease;
+      width: 0%;
+    }
+
+    .progress-label {
+      display: none;
+      text-align: center;
+      margin-top: 8px;
+      font-size: 0.82rem;
+      color: var(--text-muted);
+    }
+
+    /* ─── RESULTS ─── */
+    .results-header {
+      display: none;
+      align-items: center;
+      justify-content: space-between;
+      margin-top: 44px;
+      margin-bottom: 20px;
+      flex-wrap: wrap;
+      gap: 12px;
+    }
+
+    .results-title {
+      font-family: 'Cinzel', serif;
+      font-size: 1.2rem;
+      color: var(--gold);
+    }
+
+    #resultsGrid {
+      display: grid;
+      grid-template-columns: repeat(auto-fill, minmax(340px, 1fr));
+      gap: 20px;
+    }
+
+    /* ─── CARD RESULT ─── */
+    .card-result {
+      background: var(--bg-card);
+      border: 1px solid var(--border);
+      border-radius: var(--radius);
+      overflow: hidden;
+      transition: transform 0.25s ease, box-shadow 0.25s ease, border-color 0.25s ease;
+      animation: fadeSlideIn 0.4s ease both;
+    }
+
+    .card-result:hover {
+      transform: translateY(-4px);
+      box-shadow: 0 16px 48px rgba(0, 0, 0, 0.5);
+      border-color: rgba(201, 168, 76, 0.3);
+    }
+
+    @keyframes fadeSlideIn {
+      from {
+        opacity: 0;
+        transform: translateY(16px);
+      }
+
+      to {
+        opacity: 1;
+        transform: translateY(0);
+      }
+    }
+
+    .card-result.loading {
+      border-color: rgba(74, 158, 255, 0.3);
+    }
+
+    .card-result.success {
+      border-color: rgba(80, 192, 128, 0.25);
+    }
+
+    .card-result.error {
+      border-color: rgba(224, 80, 80, 0.25);
+    }
+
+    .card-inner {
+      display: flex;
+      gap: 0;
+    }
+
+    .card-img-col {
+      flex: 0 0 160px; /* Reduced from ~240px */
+      min-width: 160px;
+      position: relative;
+      background: #08090e;
+      display: flex;
+      align-items: center; /* Center the image vertically if it's smaller than the info column */
+    }
+
+    .card-img-col img {
+      width: 100%;
+      height: auto;
+      object-fit: contain;
+      display: block;
+      transition: opacity 0.3s;
+      border-radius: 4px;
+    }
+
+    .card-img-overlay {
+      position: absolute;
+      inset: 0;
+      background: linear-gradient(90deg, transparent 60%, var(--bg-card));
+    }
+
+    .card-info-col {
+      flex: 1;
+      padding: 16px 18px;
+      min-width: 0;
+    }
+
+    .card-name {
+      font-family: 'Cinzel', serif;
+      font-size: 1rem;
+      font-weight: 600;
+      color: var(--text);
+      line-height: 1.3;
+      margin-bottom: 4px;
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+    }
+
+    .card-set {
+      font-size: 0.78rem;
+      color: var(--text-muted);
+      margin-bottom: 12px;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 6px;
+    }
+
+    .card-badge-row {
+      display: flex;
+      gap: 6px;
+      flex-wrap: wrap;
+      margin-bottom: 12px;
+    }
+
+    .badge {
+      font-size: 0.72rem;
+      font-weight: 600;
+      padding: 3px 9px;
+      border-radius: 99px;
+      letter-spacing: 0.04em;
+      text-transform: uppercase;
+    }
+
+    .badge-common {
+      background: rgba(176, 184, 200, 0.15);
+      color: var(--common);
+      border: 1px solid rgba(176, 184, 200, 0.25);
+    }
+
+    .badge-uncommon {
+      background: rgba(128, 192, 160, 0.15);
+      color: var(--uncommon);
+      border: 1px solid rgba(128, 192, 160, 0.25);
+    }
+
+    .badge-rare {
+      background: rgba(212, 168, 32, 0.15);
+      color: var(--rare);
+      border: 1px solid rgba(212, 168, 32, 0.3);
+    }
+
+    .badge-mythic {
+      background: rgba(224, 96, 48, 0.15);
+      color: var(--mythic);
+      border: 1px solid rgba(224, 96, 48, 0.3);
+    }
+
+    .badge-special {
+      background: rgba(160, 80, 200, 0.15);
+      color: #c080f0;
+      border: 1px solid rgba(160, 80, 200, 0.3);
+    }
+
+    .badge-set {
+      background: rgba(74, 158, 255, 0.12);
+      color: var(--blue-acc);
+      border: 1px solid rgba(74, 158, 255, 0.2);
+    }
+
+    .badge-cn {
+      background: rgba(255, 255, 255, 0.06);
+      color: var(--text-muted);
+      border: 1px solid var(--border);
+    }
+
+    .card-id-row {
+      display: flex;
+      align-items: center;
+      gap: 6px;
+      margin-bottom: 12px;
+    }
+
+    .card-id-label {
+      font-size: 0.72rem;
+      color: var(--text-muted);
+      white-space: nowrap;
+    }
+
+    .card-id-val {
+      font-family: 'Courier New', monospace;
+      font-size: 0.68rem;
+      color: var(--gold);
+      background: rgba(201, 168, 76, 0.08);
+      border: 1px solid rgba(201, 168, 76, 0.2);
+      border-radius: 4px;
+      padding: 2px 7px;
+      cursor: pointer;
+      transition: background 0.2s;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      max-width: 180px;
+      white-space: nowrap;
+    }
+
+    .card-id-val:hover {
+      background: rgba(201, 168, 76, 0.2);
+    }
+
+    .copy-hint {
+      font-size: 0.65rem;
+      color: var(--text-muted);
+    }
+
+    /* PRICES */
+    .price-row {
+      display: flex;
+      gap: 10px;
+      flex-wrap: wrap;
+    }
+
+    .price-chip {
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      background: rgba(255, 255, 255, 0.04);
+      border: 1px solid var(--border);
+      border-radius: var(--radius-sm);
+      padding: 6px 10px;
+      min-width: 58px;
+    }
+
+    .price-chip .price-label {
+      font-size: 0.65rem;
+      color: var(--text-muted);
+      text-transform: uppercase;
+      letter-spacing: 0.05em;
+    }
+
+    .price-chip .price-val {
+      font-size: 0.9rem;
+      font-weight: 600;
+      color: var(--success);
+      margin-top: 1px;
+    }
+
+    .price-chip .price-val.foil {
+      color: var(--gold);
+    }
+
+    .price-chip .price-val.na {
+      color: var(--text-muted);
+      font-size: 0.75rem;
+    }
+
+    /* CARD FOOTER */
+    .card-footer {
+      border-top: 1px solid var(--border);
+      padding: 10px 16px;
+      display: flex;
+      gap: 8px;
+      flex-wrap: wrap;
+      align-items: center;
+      justify-content: flex-end;
+    }
+
+    .link-btn {
+      font-size: 0.75rem;
+      font-weight: 600;
+      padding: 5px 12px;
+      border-radius: 6px;
+      border: 1px solid var(--border);
+      background: none;
+      color: var(--text-muted);
+      cursor: pointer;
+      text-decoration: none;
+      transition: all 0.2s;
+      display: inline-flex;
+      align-items: center;
+      gap: 4px;
+    }
+
+    .link-btn:hover {
+      border-color: var(--gold);
+      color: var(--gold);
+    }
+
+    .link-btn.scryfall {
+      border-color: rgba(74, 158, 255, 0.3);
+      color: var(--blue-acc);
+    }
+
+    .link-btn.scryfall:hover {
+      background: rgba(74, 158, 255, 0.1);
+    }
+
+    .link-btn.tcg {
+      border-color: rgba(224, 96, 48, 0.3);
+      color: #e06030;
+    }
+
+    .link-btn.tcg:hover {
+      background: rgba(224, 96, 48, 0.08);
+    }
+
+    /* LOADING STATE */
+    .loading-state {
+      padding: 36px 24px;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      gap: 14px;
+    }
+
+    .spinner {
+      width: 36px;
+      height: 36px;
+      border: 3px solid rgba(201, 168, 76, 0.2);
+      border-top-color: var(--gold);
+      border-radius: 50%;
+      animation: spin 0.9s linear infinite;
+    }
+
+    @keyframes spin {
+      to {
+        transform: rotate(360deg);
+      }
+    }
+
+    .loading-msg {
+      font-size: 0.85rem;
+      color: var(--text-muted);
+      text-align: center;
+    }
+
+    .loading-filename {
+      font-size: 0.78rem;
+      color: var(--text-muted);
+      opacity: 0.7;
+    }
+
+    /* ERROR STATE */
+    .error-state {
+      padding: 28px 20px;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      gap: 8px;
+      text-align: center;
+    }
+
+    .error-icon {
+      font-size: 2rem;
+    }
+
+    .error-msg {
+      font-size: 0.85rem;
+      color: var(--error);
+    }
+
+    .error-detail {
+      font-size: 0.75rem;
+      color: var(--text-muted);
+      max-width: 260px;
+    }
+
+    /* UPLOADED IMAGE PREVIEW (small) */
+    .uploaded-thumb {
+      width: 100%;
+      height: 68px;
+      object-fit: cover;
+      display: block;
+      border-radius: 6px 6px 0 0;
+      opacity: 0.5;
+    }
+
+    /* ─── EXPORT ─── */
+    .export-note {
+      text-align: center;
+      font-size: 0.78rem;
+      color: var(--text-muted);
+      margin-top: 30px;
+    }
+
+    /* ─── TOAST ─── */
+    #toast {
+      position: fixed;
+      bottom: 30px;
+      left: 50%;
+      transform: translateX(-50%) translateY(80px);
+      background: var(--bg-card);
+      border: 1px solid var(--gold);
+      color: var(--gold);
+      padding: 10px 22px;
+      border-radius: 99px;
+      font-size: 0.84rem;
+      font-weight: 500;
+      z-index: 1000;
+      transition: transform 0.35s cubic-bezier(.34, 1.56, .64, 1), opacity 0.3s;
+      opacity: 0;
+      pointer-events: none;
+    }
+
+    #toast.show {
+      transform: translateX(-50%) translateY(0);
+      opacity: 1;
+    }
+
+    /* ─── RESPONSIVE ─── */
+    @media (max-width: 500px) {
+      .card-img-col {
+        width: 100px;
+      }
+
+      .card-id-val {
+        max-width: 120px;
+      }
+
+      #resultsGrid {
+        grid-template-columns: 1fr;
+      }
+    }
+
+    /* ─── MODAL EDICION ─── */
+    .modal-overlay {
+      position: fixed; top: 0; left: 0; width: 100%; height: 100%;
+      background: rgba(0,0,0,0.8); backdrop-filter: blur(4px);
+      display: none; justify-content: center; align-items: center; z-index: 9999;
+    }
+    .modal-content {
+      background: var(--bg-card); border: 1px solid var(--border);
+      border-radius: 12px; width: 90%; max-width: 500px;
+      max-height: 80vh; display: flex; flex-direction: column;
+      box-shadow: 0 10px 40px rgba(0,0,0,0.5); overflow: hidden;
+    }
+    .modal-header {
+      padding: 16px 20px; border-bottom: 1px solid var(--border);
+      display: flex; justify-content: space-between; align-items: center;
+    }
+    .modal-title { font-family: 'Cinzel', serif; font-size: 1.2rem; color: var(--gold); margin: 0; }
+    .modal-close { background: none; border: none; color: var(--text-muted); font-size: 1.5rem; cursor: pointer; padding: 0; line-height: 1; }
+    .modal-close:hover { color: #fff; }
+    .modal-body { padding: 20px; overflow-y: auto; flex: 1; }
+    .print-list { display: flex; flex-direction: column; gap: 8px; }
+    .print-item {
+      display: flex; justify-content: space-between; align-items: center;
+      padding: 10px 14px; background: rgba(255,255,255,0.03);
+      border: 1px solid var(--border); border-radius: 8px; cursor: pointer;
+      transition: all 0.2s;
+    }
+    .print-item:hover { background: rgba(255,255,255,0.08); border-color: rgba(255,255,255,0.2); }
+    .print-set { font-weight: 600; color: var(--text); font-size: 0.9rem; }
+    .print-details { font-size: 0.8rem; color: var(--text-muted); display:flex; gap:8px; align-items:center;}
+    .modal-loader { text-align: center; padding: 20px; color: var(--text-muted); font-size: 0.9rem; }
+  </style>
+</head>
+
+<body>
+
+  <header>
+    <h1 class="header-title">✦ Magic Card Identifier ✦</h1>
+    <p class="header-sub">Sube fotos de tus cartas · Identificación automática · Precios en tiempo real</p>
+  </header>
+
+  <div class="container">
+
+    <!-- API KEY & MARGIN -->
+    <section id="apiKeySection" class="api-key-section" style="display:flex; justify-content:flex-end; margin-bottom:20px;">
+      <!-- API KEY is now hardcoded internally -->
+      <div style="display:none">
+        <input type="password" id="apiKeyInput" value="AIzaSyDfAS_VxXzYYDfOS4rpfo2cMiXqy-4O3z0" />
+      </div>
+    </section>
+    <!-- UPLOAD ZONE -->
+    <div class="upload-area" id="uploadArea" onclick="document.getElementById('fileInput').click()">
+      <span class="upload-icon">🃏</span>
+      <p class="upload-title">Arrastra las fotos de tus cartas aquí</p>
+      <p class="upload-sub">o haz clic para seleccionar · <strong>múltiples imágenes</strong> aceptadas</p>
+      <p class="upload-sub" style="margin-top:6px; font-size:0.78rem;">JPG, PNG, WEBP · calidad media o alta recomendada
+      </p>
+      <input type="file" id="fileInput" accept="image/*" multiple />
+    </div>
+
+    <!-- QUEUE PREVIEW -->
+    <div class="queue-preview" id="queuePreview"></div>
+    <p class="queue-count" id="queueCount" style="display:none"></p>
+
+    <!-- CONTROLS -->
+    <div class="controls">
+      <button class="btn btn-primary" id="identifyBtn" disabled onclick="startIdentification()">
+        🔍 Identificar Cartas
+      </button>
+      <button class="btn btn-ghost" id="clearBtn" disabled onclick="clearAll()">
+        🗑 Limpiar
+      </button>
+      <button class="btn btn-ghost" id="exportBtn" disabled onclick="exportCSV()">
+        📥 Exportar CSV
+      </button>
+      <button class="btn btn-ghost" id="exportXlsxBtn" disabled onclick="exportExcel()"
+        style="border-color:rgba(80,192,128,0.35); color:#50c080">
+        📊 Exportar Excel
+      </button>
+      <button class="btn btn-ghost" id="exportMatrixifyBtn" disabled onclick="exportMatrixify()"
+        style="border-color:rgba(149,191,71,0.35); color:#95BF47">
+        🛍️ Exportar Shopify
+      </button>
+    </div>
+
+    <!-- SCHEDULE SETTINGS -->
+    <div id="scheduleSettings" style="margin-top:20px; padding:15px; border-radius:10px; background:rgba(255,255,255,0.02); border:1px solid var(--border); display:flex; align-items:center; gap:15px; flex-wrap:wrap;">
+      <h3 style="margin:0; font-size:1rem; color:var(--gold); display:flex; align-items:center; gap:6px;">⏱️ Autorefrescar Precios Shopify</h3>
+      <div style="display:flex; align-items:center; gap:8px;">
+        <label for="schedHour" style="font-size:0.85rem; color:var(--text-muted)">Hora (0-23):</label>
+        <input type="number" id="schedHour" value="6" min="0" max="23" style="width:50px; padding:4px; font-size:0.85rem; background:var(--bg-glass); border:1px solid var(--border); color:#fff; border-radius:4px; text-align:center;">
+        
+        <label for="schedMin" style="font-size:0.85rem; color:var(--text-muted); margin-left:10px;">Min (0-59):</label>
+        <input type="number" id="schedMin" value="0" min="0" max="59" style="width:50px; padding:4px; font-size:0.85rem; background:var(--bg-glass); border:1px solid var(--border); color:#fff; border-radius:4px; text-align:center;">
+        
+        <button class="btn btn-ghost" onclick="updateSchedule()" style="padding:4px 12px; font-size:0.85rem; margin-left:10px; border-color:var(--blue-acc); color:var(--blue-acc)">
+           Guardar Horario
+        </button>
+      </div>
+    </div>
+
+    <!-- PROGRESS -->
+    <div class="progress-bar-wrap" id="progressWrap">
+      <div class="progress-bar-inner" id="progressBar"></div>
+    </div>
+    <p class="progress-label" id="progressLabel"></p>
+
+    <!-- RESULTS HEADER -->
+    <div class="results-header" id="resultsHeader">
+      <span class="results-title">Resultados</span>
+      <span style="font-size:0.82rem; color:var(--text-muted)" id="resultsSummary"></span>
+    </div>
+
+    <!-- RESULTS GRID -->
+    <div id="resultsGrid"></div>
+
+  </div>
+
+  <!-- EDIT MODAL -->
+  <div id="editModal" class="modal-overlay">
+    <div class="modal-content">
+      <div class="modal-header">
+        <h2 class="modal-title">Seleccionar Edición</h2>
+        <button class="modal-close" onclick="closeEditModal()">×</button>
+      </div>
+      <div class="modal-body" id="editModalBody">
+         <!-- Content injected via JS -->
+      </div>
+    </div>
+  </div>
+
+  <!-- TOAST -->
+  <div id="toast"></div>
+
+  <script>
+    // ─── STATE ───────────────────────────────────────────────────────────────────
+    let queue = []; // { file, dataUrl, name }
+    let results = []; // identified cards
+    let identifying = false;
+
+    // Conexión con el Servidor (Render o Local)
+    const API_BASE = window.location.origin;
+
+    // ─── API KEY ──────────────────────────────────────────────────────────────────
+    // API Key is now hardcoded
+    const apiKeyInput = document.getElementById('apiKeyInput');
+    const HARDCODED_KEY = "AIzaSyDfAS_VxXzYYDfOS4rpfo2cMiXqy-4O3z0";
+    apiKeyInput.value = HARDCODED_KEY;
+
+    function updateKeyStatus(k) { /* Not needed anymore */ }
+    function toggleKeyVisibility() { /* Not needed anymore */ }
+
+    // ─── FILE HANDLING ────────────────────────────────────────────────────────────
+    const uploadArea = document.getElementById('uploadArea');
+    const fileInput = document.getElementById('fileInput');
+
+    uploadArea.addEventListener('dragover', e => { e.preventDefault(); uploadArea.classList.add('drag-over'); });
+    uploadArea.addEventListener('dragleave', () => uploadArea.classList.remove('drag-over'));
+    uploadArea.addEventListener('drop', e => {
+      e.preventDefault();
+      uploadArea.classList.remove('drag-over');
+      handleFiles(e.dataTransfer.files);
+    });
+    fileInput.addEventListener('change', () => handleFiles(fileInput.files));
+
+    function handleFiles(files) {
+      const imgs = Array.from(files).filter(f => f.type.startsWith('image/'));
+      if (!imgs.length) return;
+      imgs.forEach(file => {
+        const reader = new FileReader();
+        reader.onload = e => {
+          queue.push({ file, dataUrl: e.target.result, name: file.name });
+          renderQueue();
+          updateButtons();
+        };
+        reader.readAsDataURL(file);
+      });
+      fileInput.value = '';
+    }
+
+    function renderQueue() {
+      const wrap = document.getElementById('queuePreview');
+      const cnt = document.getElementById('queueCount');
+      wrap.innerHTML = '';
+      queue.forEach((item, i) => {
+        const div = document.createElement('div');
+        div.className = 'queue-thumb';
+        div.innerHTML = `<img src="${item.dataUrl}" alt="${item.name}" title="${item.name}" />
+      <button class="remove-btn" onclick="removeFromQueue(${i}, event)">✕</button>`;
+        wrap.appendChild(div);
+      });
+      if (queue.length > 0) {
+        cnt.textContent = `${queue.length} carta${queue.length !== 1 ? 's' : ''} en cola`;
+        cnt.style.display = 'block';
+      } else {
+        cnt.style.display = 'none';
+      }
+    }
+
+    function removeFromQueue(i, e) {
+      e.stopPropagation();
+      queue.splice(i, 1);
+      renderQueue();
+      updateButtons();
+    }
+
+    function updateButtons() {
+      const hasQueue = queue.length > 0;
+      const hasKey = true;
+      const hasResults = results.filter(r => r.card).length > 0;
+      document.getElementById('identifyBtn').disabled = !hasQueue || identifying;
+      document.getElementById('clearBtn').disabled = !hasQueue && results.length === 0;
+      document.getElementById('exportBtn').disabled = !hasResults;
+      document.getElementById('exportXlsxBtn').disabled = !hasResults;
+      document.getElementById('exportMatrixifyBtn').disabled = !hasResults;
+    }
+
+    // ─── IDENTIFICATION ENGINE ────────────────────────────────────────────────────
+    async function startIdentification() {
+      if (!queue.length || identifying) return;
+      const apiKey = apiKeyInput.value.trim();
+      if (!apiKey) { showToast('⚠ Ingresa tu Gemini API key primero'); return; }
+
+      identifying = true;
+      results = [];
+      updateButtons();
+
+      // Show progress
+      document.getElementById('progressWrap').style.display = 'block';
+      document.getElementById('progressLabel').style.display = 'block';
+      document.getElementById('resultsHeader').style.display = 'flex';
+      document.getElementById('resultsSummary').textContent = '';
+
+      const grid = document.getElementById('resultsGrid');
+      grid.innerHTML = '';
+
+      const total = queue.length;
+      const toProcess = [...queue];
+
+      for (let i = 0; i < toProcess.length; i++) {
+        const item = toProcess[i];
+        const pct = Math.round((i / total) * 100);
+        document.getElementById('progressBar').style.width = pct + '%';
+        document.getElementById('progressLabel').textContent =
+          `Identificando ${i + 1} de ${total}: ${item.name}`;
+
+        // Create placeholder card
+        const cardEl = document.createElement('div');
+        cardEl.className = 'card-result loading';
+        cardEl.id = 'card_' + i;
+        cardEl.innerHTML = `
+      <img class="uploaded-thumb" src="${item.dataUrl}" alt="preview" />
+      <div class="loading-state">
+        <div class="spinner"></div>
+        <p class="loading-msg">Analizando imagen con IA…</p>
+        <p class="loading-filename">${escHtml(item.name)}</p>
+      </div>`;
+        grid.appendChild(cardEl);
+        cardEl.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+
+        try {
+          const identified = await identifyCard(item.dataUrl, apiKey);
+          const scryfallCard = await fetchScryfall(identified);
+          const resultIndex = results.length;
+          const domId = cardEl.id;
+          results.push({ item, identified, card: scryfallCard, domId });
+          renderCardResult(cardEl, item, identified, scryfallCard, resultIndex);
+        } catch (err) {
+          const resultIndex = results.length;
+          const domId = cardEl.id;
+          results.push({ item, error: err.message, domId });
+          renderCardError(cardEl, item, err.message, resultIndex);
+        }
+      }
+
+      // Done
+      document.getElementById('progressBar').style.width = '100%';
+      document.getElementById('progressLabel').textContent = `✓ ${total} carta${total !== 1 ? 's' : ''} procesada${total !== 1 ? 's' : ''}`;
+
+      const ok = results.filter(r => r.card).length;
+      const err = results.filter(r => r.error).length;
+      document.getElementById('resultsSummary').textContent =
+        `${ok} identificada${ok !== 1 ? 's' : ''} · ${err} error${err !== 1 ? 'es' : ''}`;
+
+      identifying = false;
+      updateButtons();
+      showToast(`✓ Listo — ${ok} de ${total} cartas identificadas`);
+    }
+
+    // ─── GEMINI VISION ────────────────────────────────────────────────────────────
+    async function identifyCard(dataUrl, apiKey) {
+      const base64 = dataUrl.split(',')[1];
+      const mime = dataUrl.split(';')[0].split(':')[1];
+
+      const prompt = `You are a Magic: The Gathering card expert. Analyze this card image carefully.
+
+Return ONLY a JSON object (no markdown, no explanation) with these exact fields:
+{
+  "name": "<exact card name as printed>",
+  "set_code": "<3-5 letter set code visible on the card, e.g. BOK, M10, MH2, MUL>",
+  "collector_number": "<the exact number before the slash, e.g. 44, 123, 0345, or 65★>",
+  "language": "<en, es, fr, de, pt, jp, etc>"
+}
+
+CRITICAL INSTRUCTIONS FOR ACCURACY:
+- This might be an Alternate Art, Showcase, Retro Frame, or Borderless card.
+- To accurately price it, YOU MUST extract the precise 'set_code' and 'collector_number'.
+- The set code (3-5 letters/numbers) and the collector number are located at the bottom left or bottom right corner.
+- The collector number format is usually "NUMBER/TOTAL" (e.g., 44/165 or 0345). Extract only the NUMBER before the slash.
+- If there is a star or special character next to the number (e.g. 65★), include it!
+
+Be precise. The Set Code and Collector Number are the most important fields.`;
+
+      const body = {
+        contents: [{
+          parts: [
+            { text: prompt },
+            { inline_data: { mime_type: mime, data: base64 } }
+          ]
+        }],
+        generationConfig: {
+          temperature: 0.1,
+          maxOutputTokens: 2048,
+          responseMimeType: "application/json"
+        }
+      };
+
+      const res = await fetch(
+        `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key=${apiKey}`,
+        { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) }
+      );
+
+      if (!res.ok) {
+        const errData = await res.json().catch(() => ({}));
+        const msg = errData.error?.message || `HTTP ${res.status}`;
+        console.error('Gemini API Error details:', errData);
+
+        if (res.status === 404) {
+          throw new Error('Error 404: El modelo no se encontró. Esto suele pasar si la API de Gemini no está habilitada en tu proyecto de Google o si el nombre del modelo es incorrecto. Probá crear una API Key nueva en un proyecto nuevo en AI Studio.');
+        }
+        if (res.status === 403) {
+          throw new Error('Error 403: Acceso denegado. Tu API Key puede tener restricciones de IP o de servicios. Revisala en AI Studio.');
+        }
+        if (res.status === 429) {
+          throw new Error('Error 429: Límite de velocidad. Esperá 1 minuto y volvé a subir la carta.');
+        }
+        throw new Error(`Error de Google: ${msg}`);
+      }
+
+      const data = await res.json();
+      let rawText = data.candidates?.[0]?.content?.parts?.[0]?.text || '';
+
+      // Clean up markdown code blocks if the model wrapped the JSON in them
+      rawText = rawText.replace(/```json/gi, '').replace(/```/g, '').trim();
+
+      // Find the first { and the last }
+      const startIdx = rawText.indexOf('{');
+      const endIdx = rawText.lastIndexOf('}');
+
+      if (startIdx === -1 || endIdx === -1 || startIdx > endIdx) {
+        console.error("No JSON structure found in raw output:", rawText);
+        throw new Error('Sin JSON: ' + rawText.substring(0, 150));
+      }
+
+      const jsonString = rawText.substring(startIdx, endIdx + 1);
+
+      let parsed;
+      try {
+        parsed = JSON.parse(jsonString);
+      } catch (e) {
+        // Try one more fallback: sometimes Gemini responses have trailing commas or weird characters
+        try {
+          const cleaned = jsonString.replace(/,\s*}/g, '}'); // Remove trailing commas
+          parsed = JSON.parse(cleaned);
+        } catch (e2) {
+          console.error("Error parsing JSON:", jsonString, e2);
+          throw new Error('Error de formato: ' + jsonString.substring(0, 150));
+        }
+      }
+
+      if (!parsed.name) throw new Error('No se detectó nombre de carta en la imagen');
+
+      return parsed;
+    }
+
+    // ─── SCRYFALL LOOKUP ──────────────────────────────────────────────────────────
+    async function fetchScryfall(identified) {
+      const { name, set_code, collector_number } = identified;
+      const headers = { 'User-Agent': 'MagicritionApp/1.0', 'Accept': 'application/json' };
+
+      // Strategy 1: exact by set + collector number (most reliable)
+      if (set_code && collector_number) {
+        const code = set_code.toLowerCase().replace(/[^a-z0-9]/g, '');
+        const num = String(collector_number).replace(/[^0-9a-z★]/gi, '');
+        const url = `https://api.scryfall.com/cards/${code}/${num}`;
+        const r1 = await fetch(url, { headers });
+        if (r1.ok) return await r1.json();
+      }
+
+      // Strategy 2: exact name + set
+      if (set_code) {
+        const code = set_code.toLowerCase().replace(/[^a-z0-9]/g, '');
+        const url = `https://api.scryfall.com/cards/named?exact=${encodeURIComponent(name)}&set=${code}`;
+        const r2 = await fetch(url, { headers });
+        if (r2.ok) return await r2.json();
+      }
+
+      // Strategy 3: exact name any set
+      const r3 = await fetch(
+        `https://api.scryfall.com/cards/named?exact=${encodeURIComponent(name)}`, { headers }
+      );
+      if (r3.ok) return await r3.json();
+
+      // Strategy 4: fuzzy name + set
+      if (set_code) {
+        const code = set_code.toLowerCase().replace(/[^a-z0-9]/g, '');
+        const r4 = await fetch(
+          `https://api.scryfall.com/cards/named?fuzzy=${encodeURIComponent(name)}&set=${code}`, { headers }
+        );
+        if (r4.ok) return await r4.json();
+      }
+
+      // Strategy 5: fuzzy name any set
+      const r5 = await fetch(
+        `https://api.scryfall.com/cards/named?fuzzy=${encodeURIComponent(name)}`, { headers }
+      );
+      if (r5.ok) return await r5.json();
+
+      if (r5.ok) return await r5.json();
+
+      throw new Error(`Carta "${name}" no encontrada en Scryfall`);
+    }
+
+    // ─── MANUAL EDIT (MODAL) ──────────────────────────────────────────────────────
+    function closeEditModal() {
+      document.getElementById('editModal').style.display = 'none';
+    }
+
+    async function editCard(index) {
+      const res = results[index];
+      if (!res || !res.identified || !res.identified.name) return;
+      
+      const modal = document.getElementById('editModal');
+      const modalBody = document.getElementById('editModalBody');
+      
+      modal.style.display = 'flex';
+      modalBody.innerHTML = `<div class="modal-loader"><div class="spinner" style="margin: 0 auto 10px auto;"></div>Buscando ediciones para <strong>${escHtml(res.identified.name)}</strong>...</div>`;
+
+      try {
+        // Fetch all printings of this card name from Scryfall
+        const url = `https://api.scryfall.com/cards/search?q=!"${encodeURIComponent(res.identified.name)}"&unique=prints`;
+        const scryReq = await fetch(url);
+        
+        if (!scryReq.ok) {
+           throw new Error("No se encontraron variantes en Scryfall para este nombre.");
+        }
+        
+        const data = await scryReq.json();
+        const prints = data.data || [];
+        
+        if (prints.length === 0) {
+           modalBody.innerHTML = `<div class="modal-loader" style="color:var(--error)">No hay ediciones registradas para esta carta.</div>`;
+           return;
+        }
+
+        // Render the list of sets
+        let html = `<div class="print-list">`;
+        prints.forEach(p => {
+           const setCode = (p.set || "").toUpperCase();
+           const setName = p.set_name || setCode;
+           const cn = p.collector_number || "";
+           const rarity = p.rarity || "";
+           
+           html += `
+             <div class="print-item" onclick="applyEdit(${index}, '${setCode}', '${escHtml(p.name)}', '${cn}')">
+                <div style="display:flex; flex-direction:column; gap:4px;">
+                   <span class="print-set">${escHtml(setName)} (${setCode})</span>
+                   <span class="print-details">
+                     ${rarity ? `<span style="text-transform:capitalize">${rarity}</span> • ` : ''} 
+                     #${cn} 
+                     ${p.foil ? ' • Foil' : ''}
+                   </span>
+                </div>
+                <div style="font-size:1.2rem; color:var(--text-muted);">›</div>
+             </div>
+           `;
+        });
+        html += `</div>`;
+        modalBody.innerHTML = html;
+
+      } catch (err) {
+        modalBody.innerHTML = `<div class="modal-loader" style="color:var(--error)">Error buscando cartas:<br>${err.message}</div>`;
+      }
+    }
+
+    async function applyEdit(index, setCode, exactName, collector_number) {
+      closeEditModal();
+      const res = results[index];
+      if (!res) return;
+      const cardEl = document.getElementById(res.domId);
+      if (!cardEl) return;
+
+      // Update identification
+      res.identified = res.identified || {};
+      res.identified.set_code = setCode;
+      res.identified.name = exactName || res.identified.name;
+      res.identified.collector_number = collector_number;
+
+      // Localized loading state
+      cardEl.className = 'card-result loading';
+      cardEl.innerHTML = `
+      <img class="uploaded-thumb" src="${res.item.dataUrl}" alt="preview" />
+      <div class="loading-state">
+        <div class="spinner"></div>
+        <p class="loading-msg">Cargando la edición seleccionada…</p>
+      </div>`;
+
+      try {
+        const scryfallCard = await fetchScryfall(res.identified);
+        res.card = scryfallCard;
+        res.error = null;
+        renderCardResult(cardEl, res.item, res.identified, scryfallCard, index);
+        updateButtons();
+        showToast("✓ Edición actualizada correctamente");
+      } catch (err) {
+        res.card = null;
+        res.error = err.message;
+        renderCardError(cardEl, res.item, err.message, index);
+        updateButtons();
+      }
+    }
+
+    // ─── ADD TO SHOPIFY ───────────────────────────────────────────────────────────
+    async function addToShopify(index) {
+      const res = results[index];
+      if (!res || !res.card) {
+        showToast("⚠ No hay datos de carta válidos para subir.");
+        return;
+      }
+
+      const btn = document.getElementById(`btn-shopify-${index}`);
+      const btnMf = document.getElementById(`btn-metafield-${index}`);
+      const originalText = btn.innerHTML;
+      btn.innerHTML = `<div class="spinner" style="width:12px; height:12px; margin-right:4px;"></div> Subiendo...`;
+      btn.disabled = true;
+
+      try {
+        const marginVal = res.customMargin || 1.30;
+        const statusEl = document.getElementById(`status-${index}`);
+        const stockEl = document.getElementById(`stock-${index}`);
+        const stockFoilEl = document.getElementById(`stock-foil-${index}`);
+        
+        const statusVal = statusEl ? statusEl.value : 'active';
+        const stockVal = stockEl ? parseInt(stockEl.value) : 0;
+        const stockFoilVal = stockFoilEl ? parseInt(stockFoilEl.value) : 0;
+
+        const response = await fetch(`${API_BASE}/api/add_card`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ card: res.card, margin: marginVal, status: statusVal, stock: stockVal, stockFoil: stockFoilVal })
+        });
+        
+        const responseData = await response.json();
+
+        if (!response.ok) {
+           throw new Error(responseData.error || 'Error desconocido del servidor');
+        }
+
+        // Save the product ID for metafield syncing
+        if (responseData.product_id) {
+           res.shopify_product_id = responseData.product_id;
+        }
+
+        if (responseData.warning) {
+           alert("ATENCIÓN: " + responseData.warning);
+           showToast("⚠️ Carta añadida, pero sin metacampo");
+           if (btnMf) {
+             btnMf.style.display = 'inline-block';
+           }
+        } else {
+           showToast("✅ Carta añadida a Shopify con éxito");
+        }
+
+        btn.innerHTML = "✓ Añadida";
+        btn.style.color = "var(--success)";
+        btn.style.borderColor = "var(--success)";
+      } catch(err) {
+        alert("Error al subir a Shopify:\\n" + err.message + "\\n\\nAsegúrate de que 'python app.py' esté corriendo.");
+        btn.innerHTML = originalText;
+        btn.disabled = false;
+      }
+    }
+
+    async function updateSchedule() {
+      const h = document.getElementById('schedHour').value;
+      const m = document.getElementById('schedMin').value;
+      try {
+        const res = await fetch(`${API_BASE}/api/update_schedule`, {
+          method: 'POST',
+          headers: {'Content-Type': 'application/json'},
+          body: JSON.stringify({hour: h, minute: m})
+        });
+        const data = await res.json();
+        if(!res.ok) throw new Error(data.error || "Error al actualizar");
+        showToast("✅ Horario actualizado. Próxima: " + data.next_update_utc);
+      } catch(e) {
+        alert("Error: " + e.message);
+      }
+    }
+
+    // ─── SYNC METAFIELD MANUAL ────────────────────────────────────────────────────
+    async function addMetafield(index) {
+      const res = results[index];
+      if (!res || !res.shopify_product_id || !res.card?.id) return;
+      
+      const btn = document.getElementById(`btn-metafield-${index}`);
+      if (!btn) return;
+      
+      const originalText = btn.innerHTML;
+      btn.innerHTML = `<div class="spinner" style="width:12px; height:12px; margin-right:4px;"></div> Sincronizando...`;
+      btn.disabled = true;
+      
+      try {
+        const response = await fetch(`${API_BASE}/api/add_metafield`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ product_id: res.shopify_product_id, scryfall_id: res.card.id })
+        });
+        
+        const responseData = await response.json();
+        if (!response.ok) throw new Error(responseData.error || 'Error desconocido del servidor');
+        
+        showToast("✅ Metacampo guardado exitosamente en Shopify");
+        btn.innerHTML = "✓ Sincronizado";
+        btn.style.color = "var(--success)";
+        btn.style.borderColor = "var(--success)";
+      } catch(err) {
+        alert("Error al sincronizar metacampo:\\n" + err.message);
+        btn.innerHTML = originalText;
+        btn.disabled = false;
+      }
+    }
+
+    function updateMargin(index, val) {
+      const margin = parseFloat(val) || 1.30;
+      if (results[index]) {
+        results[index].customMargin = margin;
+        const cardEl = document.getElementById(results[index].domId);
+        if (cardEl && results[index].card) {
+          renderCardResult(cardEl, results[index].item, results[index].identified, results[index].card, index);
+        }
+      }
+    }
+
+    // ─── RENDER ───────────────────────────────────────────────────────────────────
+    function renderCardResult(el, item, identified, card, index) {
+      el.className = 'card-result success';
+
+      const prices = card.prices || {};
+      const imgUrl = card.image_uris?.normal || card.image_uris?.small ||
+        card.card_faces?.[0]?.image_uris?.normal || '';
+
+      const rarityClass = {
+        common: 'badge-common', uncommon: 'badge-uncommon',
+        rare: 'badge-rare', mythic: 'badge-mythic', special: 'badge-special', bonus: 'badge-special'
+      }[card.rarity] || 'badge-common';
+
+      const priceUSD = prices.usd ? `$${prices.usd}` : null;
+      const priceUSDFoil = prices.usd_foil ? `$${prices.usd_foil}` : null;
+      const priceEUR = prices.eur ? `€${prices.eur}` : null;
+
+      const currentMarginVal = results[index] && results[index].customMargin ? results[index].customMargin : 1.30;
+
+      const calcPriceClp = (usdStr, eurStr) => {
+        let usd = parseFloat(usdStr);
+        let eur = parseFloat(eurStr);
+        let vals = [];
+        if (!isNaN(usd)) vals.push(usd);
+        if (!isNaN(eur)) vals.push(eur * 1.05); // EUR to USD
+
+        if (vals.length === 0) return null;
+
+        let avgUsd = vals.reduce((a, b) => a + b, 0) / vals.length;
+        let costClp = avgUsd * 970;
+        let finalClp = costClp * currentMarginVal;
+
+        return {
+          cost: Math.round(costClp).toLocaleString('es-CL'),
+          final: Math.round(finalClp).toLocaleString('es-CL')
+        };
+      };
+
+      const clp = calcPriceClp(prices.usd, prices.eur);
+      const clpFoil = calcPriceClp(prices.usd_foil, prices.eur_foil);
+
+      const scryfallLink = card.scryfall_uri || `https://scryfall.com/card/${card.id}`;
+      const tcgLink = card.purchase_uris?.tcgplayer || '';
+      const cardmarketLink = card.purchase_uris?.cardmarket || '';
+      
+      const marginInfo = Math.round((currentMarginVal - 1) * 100);
+
+      el.innerHTML = `
+    <div class="card-inner">
+      <div class="card-img-col">
+        ${imgUrl
+          ? `<img src="${escHtml(imgUrl)}" alt="${escHtml(card.name)}" loading="lazy" /><div class="card-img-overlay"></div>`
+          : `<img src="${escHtml(item.dataUrl)}" alt="preview" /><div class="card-img-overlay"></div>`}
+      </div>
+      <div class="card-info-col">
+        <div class="card-name" title="${escHtml(card.name)}">${escHtml(card.name)}</div>
+        <div class="card-set" style="flex-wrap: wrap; row-gap: 4px;">
+          <span style="overflow:hidden; text-overflow:ellipsis; white-space:nowrap; flex: 1 1 auto; min-width: 100px;">${escHtml(card.set_name)} (${card.set?.toUpperCase()})</span>
+        </div>
+        
+        <div style="display: flex; flex-wrap: wrap; gap: 8px; align-items: center; margin-bottom: 8px;">
+          <div class="card-badge-row" style="margin-bottom: 0;">
+            <span class="badge ${rarityClass}">${card.rarity}</span>
+            <span class="badge badge-cn">#${card.collector_number}</span>
+            ${card.lang && card.lang !== 'en' ? `<span class="badge badge-set">${card.lang.toUpperCase()}</span>` : ''}
+          </div>
+          <div class="card-id-row" style="margin-bottom: 0; padding-left: 8px; border-left: 1px solid rgba(255,255,255,0.1);">
+            <span class="card-id-label">ID:</span>
+            <span class="card-id-val" title="Clic para copiar" onclick="copyId('${card.id}')">${card.id}</span>
+            <span class="copy-hint">📋</span>
+          </div>
+        </div>
+
+        <div style="display:flex; flex-direction:column; gap:8px; background: rgba(0,0,0,0.2); border: 1px solid rgba(255,255,255,0.05); padding: 10px; border-radius: 8px;">
+          
+          <div style="display:flex; flex-wrap: wrap; justify-content: space-between; align-items: flex-end; gap: 12px;">
+            <div class="price-row" style="margin-bottom: 0;">
+              ${priceUSD ? `<div class="price-chip" style="padding: 2px 6px; font-size: 0.75rem;"><span class="price-label">USD</span><span class="price-val">${priceUSD}</span></div>` : ''}
+              ${priceEUR ? `<div class="price-chip" style="padding: 2px 6px; font-size: 0.75rem;"><span class="price-label">EUR</span><span class="price-val">${priceEUR}</span></div>` : ''}
+              ${priceUSDFoil ? `<div class="price-chip" style="padding: 2px 6px; font-size: 0.75rem;"><span class="price-label">Foil</span><span class="price-val foil">${priceUSDFoil}</span></div>` : ''}
+              ${!priceUSD && !priceEUR ? `<span style="font-size:0.75rem;color:var(--text-muted)">Sin precio base.</span>` : ''}
+            </div>
+            
+            <div style="display:flex; flex-direction:column; gap:8px;">
+               <div style="display:flex; align-items:center; gap:8px; font-size: 0.75rem; text-transform: uppercase;">
+                   <label for="margin-${index}" style="color:var(--text-muted);">Margen</label>
+                   <input type="number" id="margin-${index}" value="${currentMarginVal.toFixed(2)}" step="0.05" onchange="updateMargin(${index}, this.value)" style="width: 50px; padding: 2px 4px; font-size: 0.75rem; background: var(--bg-glass); border: 1px solid var(--border); color: #fff; border-radius: 4px; text-align: center;" />
+                   <span style="color:var(--text-muted)">x</span>
+               </div>
+               
+               <div style="display:flex; gap: 8px; flex-wrap: wrap;">
+                 <div style="display:flex; align-items:center; gap:4px; font-size: 0.70rem;">
+                     <label for="status-${index}" style="color:var(--text-muted);">Estado</label>
+                     <select id="status-${index}" style="padding: 2px 4px; font-size: 0.70rem; background: var(--bg-glass); border: 1px solid var(--border); color: #fff; border-radius: 4px;">
+                        <option value="active">Activo</option>
+                        <option value="draft">Borrador</option>
+                     </select>
+                 </div>
+                 
+                 <div style="display:flex; align-items:center; gap:4px; font-size: 0.70rem;">
+                     <label for="stock-${index}" style="color:var(--text-muted);">Normal</label>
+                     <input type="number" id="stock-${index}" value="0" min="0" style="width: 40px; padding: 2px 4px; font-size: 0.70rem; background: var(--bg-glass); border: 1px solid var(--border); color: #fff; border-radius: 4px; text-align: center;" title="Stock Carta Normal" />
+                 </div>
+
+                 <div style="display:flex; align-items:center; gap:4px; font-size: 0.70rem;">
+                     <label for="stock-foil-${index}" style="color:var(--gold);">Foil</label>
+                     <input type="number" id="stock-foil-${index}" value="0" min="0" style="width: 40px; padding: 2px 4px; font-size: 0.70rem; background: var(--bg-glass); border: 1px solid rgba(235,186,52,0.4); color: var(--gold); border-radius: 4px; text-align: center;" title="Stock Carta Foil" />
+                 </div>
+               </div>
+            </div>
+          </div>
+
+          ${clp || clpFoil ? `
+          <div style="display:flex; gap: 8px; flex-wrap: wrap;">
+               ${clp ? `
+                 <div class="price-chip" style="background:rgba(149,191,71,0.15); border-color:rgba(149,191,71,0.5); flex-direction: row; align-items: baseline; gap: 6px;">
+                   <span class="price-label" style="color:#a8d551; font-size:0.7rem;">VENTA (+${marginInfo}%)</span>
+                   <span class="price-val" style="font-size:1.05rem; font-weight:700; color:#a8d551">$${clp.final}</span>
+                 </div>
+               ` : ''}
+               ${clpFoil ? `
+                 <div class="price-chip" style="background:rgba(235,186,52,0.1); border-color:rgba(235,186,52,0.4); flex-direction: row; align-items: baseline; gap: 6px;">
+                   <span class="price-label" style="color:#ebba34; font-size:0.7rem;">FOIL (+${marginInfo}%)</span>
+                   <span class="price-val" style="font-size:1.05rem; font-weight:700; color:#ebba34">$${clpFoil.final}</span>
+                 </div>
+               ` : ''}
+          </div>
+          ` : ''}
+        </div>
+        
+      </div>
+    </div>
+    <div class="card-footer">
+      <div style="display:flex; gap:6px;">
+        <button class="link-btn" style="padding:4px 10px; font-size:0.8rem;" onclick="editCard(${index})">✏️ Editar</button>
+        <button class="link-btn" id="btn-shopify-${index}" style="padding:4px 10px; font-size:0.8rem; border-color:rgba(149,191,71,0.5); color:#95bf47;" onclick="addToShopify(${index})">🛒 Subir a Shopify</button>
+        <button class="link-btn" id="btn-metafield-${index}" style="display:none; padding:4px 10px; font-size:0.8rem; border-color:rgba(80,192,128,0.5); color:#50c080;" onclick="addMetafield(${index})">➕ MetaCampos</button>
+      </div>
+      <div style="display:flex; gap:6px;">
+        <a class="link-btn scryfall" style="padding:4px 10px; font-size:0.75rem" href="${escHtml(scryfallLink)}" target="_blank">🔗 Scryfall</a>
+        ${tcgLink ? `<a class="link-btn tcg" style="padding:4px 10px; font-size:0.75rem" href="${escHtml(tcgLink)}" target="_blank">🛒 TCGPlayer</a>` : ''}
+        ${cardmarketLink ? `<a class="link-btn" style="padding:4px 10px; font-size:0.75rem" href="${escHtml(cardmarketLink)}" target="_blank">🌍 Cardmarket</a>` : ''}
+      </div>
+    </div>`;
+    }
+
+    function renderCardError(el, item, msg, index) {
+      el.className = 'card-result error';
+      el.innerHTML = `
+    <img class="uploaded-thumb" src="${item.dataUrl}" alt="preview" />
+    <div class="error-state">
+      <span class="error-icon">⚠️</span>
+      <p class="error-msg">No se pudo identificar</p>
+      <p class="error-detail">${escHtml(msg)}</p>
+      <p class="error-detail" style="margin-top:4px; font-size:0.7rem; opacity:0.7">${escHtml(item.name)}</p>
+      <button class="link-btn" style="margin-top:12px; font-size:0.8rem;" onclick="editCard(${index})">✏️ Editar nombre/edición manualmente</button>
+    </div>`;
+    }
+
+    // ─── UTILITIES ────────────────────────────────────────────────────────────────
+    function escHtml(s) {
+      return String(s || '')
+        .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
+        .replace(/"/g, '&quot;').replace(/'/g, '&#39;');
+    }
+
+    function copyId(id) {
+      navigator.clipboard.writeText(id).then(() => showToast('ID copiado al portapapeles ✓'));
+    }
+
+    function showToast(msg) {
+      const t = document.getElementById('toast');
+      t.textContent = msg;
+      t.classList.add('show');
+      setTimeout(() => t.classList.remove('show'), 2800);
+    }
+
+    function clearAll() {
+      queue = [];
+      results = [];
+      identifying = false;
+      renderQueue();
+      document.getElementById('resultsGrid').innerHTML = '';
+      document.getElementById('resultsHeader').style.display = 'none';
+      document.getElementById('progressWrap').style.display = 'none';
+      document.getElementById('progressLabel').style.display = 'none';
+      updateButtons();
+    }
+
+    function exportCSV() {
+      const ok = results.filter(r => r.card);
+      if (!ok.length) return;
+      const header = ['Nombre', 'Set', 'Código Set', 'Collector #', 'Rareza', 'ID Scryfall', 'Oracle ID', 'USD', 'USD Foil', 'EUR', 'TCGPlayer Link'];
+      const rows = ok.map(r => {
+        const c = r.card;
+        const p = c.prices || {};
+        return [
+          c.name, c.set_name, c.set?.toUpperCase(), c.collector_number, c.rarity,
+          c.id, c.oracle_id,
+          p.usd || '', p.usd_foil || '', p.eur || '',
+          c.purchase_uris?.tcgplayer || ''
+        ].map(v => `"${String(v || '').replace(/"/g, '""')}"`).join(',');
+      });
+      const csv = [header.join(','), ...rows].join('\n');
+      const blob = new Blob(['\uFEFF' + csv], { type: 'text/csv;charset=utf-8;' });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = `magicretion_${new Date().toISOString().slice(0, 10)}.csv`;
+      a.click();
+      URL.revokeObjectURL(url);
+      showToast('CSV exportado ✓');
+    }
+
+    function exportMatrixify() {
+      const ok = results.filter(r => r.card);
+      if (!ok.length) return;
+
+      const USD_TO_CLP = 970;
+      const EUR_TO_USD = 1.05;
+      const MARGIN_PCT = 1.30;
+
+      const header = ['Handle', 'Title', 'Option1 Name', 'Option1 Value', 'Variant Price', 'Variant Cost', 'Vendor', 'Tags', 'Image Src'];
+      const rows = [];
+
+      ok.forEach(r => {
+        const c = r.card;
+        const p = c.prices || {};
+        const handle = `card-${c.id}`;
+        const title = c.name;
+        const vendor = c.set_name || 'Magicretion';
+        const tags = `mtg, ${c.set || ''}, ${c.rarity || ''}`;
+        const imgSrc = c.image_uris?.normal || c.image_uris?.large || '';
+
+        // Helper to calc price
+        const calcPriceClp = (usdStr, eurStr) => {
+          let usd = parseFloat(usdStr);
+          let eur = parseFloat(eurStr);
+          let vals = [];
+          if (!isNaN(usd)) vals.push(usd);
+          if (!isNaN(eur)) vals.push(eur * EUR_TO_USD);
+
+          if (vals.length === 0) return { final: '', cost: '' };
+
+          let avgUsd = vals.reduce((a, b) => a + b, 0) / vals.length;
+          let costClp = avgUsd * USD_TO_CLP;
+          let finalClp = costClp * MARGIN_PCT;
+
+          return { final: Math.round(finalClp), cost: Math.round(costClp) };
+        };
+
+        // Regular Non-Foil row
+        if (p.usd || p.eur) {
+          const { final, cost } = calcPriceClp(p.usd, p.eur);
+          rows.push([
+            handle, title, 'Finish', 'Non-Foil', final, cost, vendor, tags, imgSrc
+          ].map(v => `"${String(v || '').replace(/"/g, '""')}"`).join(','));
+        }
+
+        // Foil row (as a Variant of the same handle)
+        if (p.usd_foil || p.eur_foil) {
+          const { final: finalFoil, cost: costFoil } = calcPriceClp(p.usd_foil, p.eur_foil);
+          rows.push([
+            handle, title, 'Finish', 'Foil', finalFoil, costFoil, vendor, tags, imgSrc
+          ].map(v => `"${String(v || '').replace(/"/g, '""')}"`).join(','));
+        }
+
+        // Fallback row if no price at all
+        if (!p.usd && !p.eur && !p.usd_foil && !p.eur_foil) {
+          rows.push([
+            handle, title, 'Finish', 'Non-Foil', '', '', vendor, tags, imgSrc
+          ].map(v => `"${String(v || '').replace(/"/g, '""')}"`).join(','));
+        }
+      });
+
+      const csv = [header.join(','), ...rows].join('\n');
+      const blob = new Blob(['\uFEFF' + csv], { type: 'text/csv;charset=utf-8;' });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = `matrixify_export_${new Date().toISOString().slice(0, 10)}.csv`;
+      a.click();
+      URL.revokeObjectURL(url);
+      showToast('Exportación Matrixify lista ✓');
+    }
+
+    function exportExcel() {
+      const ok = results.filter(r => r.card);
+      if (!ok.length) return;
+
+      // Build rows
+      const headers = [
+        'Nombre', 'Set', 'Código Set', 'Collector #', 'Rareza', 'Idioma',
+        'ID Scryfall', 'Oracle ID',
+        'Precio USD', 'Precio USD Foil', 'Precio USD Etched', 'Precio EUR', 'Precio EUR Foil', 'MTGO (TIX)',
+        'Link Scryfall', 'Link TCGPlayer', 'Link Cardmarket',
+        'Legalidad Modern', 'Legalidad Legacy', 'Legalidad Commander', 'Legalidad Pauper',
+        'Artista', 'Fecha de Lanzamiento', 'Tipo de carta', 'Texto Oracle'
+      ];
+
+      const data = ok.map(r => {
+        const c = r.card;
+        const p = c.prices || {};
+        const leg = c.legalities || {};
+        return [
+          c.name,
+          c.set_name,
+          (c.set || '').toUpperCase(),
+          c.collector_number,
+          c.rarity,
+          c.lang || 'en',
+          c.id,
+          c.oracle_id,
+          p.usd ? parseFloat(p.usd) : '',
+          p.usd_foil ? parseFloat(p.usd_foil) : '',
+          p.usd_etched ? parseFloat(p.usd_etched) : '',
+          p.eur ? parseFloat(p.eur) : '',
+          p.eur_foil ? parseFloat(p.eur_foil) : '',
+          p.tix ? parseFloat(p.tix) : '',
+          c.scryfall_uri || '',
+          c.purchase_uris?.tcgplayer || '',
+          c.purchase_uris?.cardmarket || '',
+          leg.modern || '',
+          leg.legacy || '',
+          leg.commander || '',
+          leg.pauper || '',
+          c.artist || '',
+          c.released_at || '',
+          c.type_line || '',
+          c.oracle_text || ''
+        ];
+      });
+
+      const wsData = [headers, ...data];
+      const ws = XLSX.utils.aoa_to_sheet(wsData);
+
+      // Column widths
+      ws['!cols'] = [
+        { wch: 28 }, { wch: 24 }, { wch: 10 }, { wch: 12 }, { wch: 12 }, { wch: 8 },
+        { wch: 38 }, { wch: 38 },
+        { wch: 12 }, { wch: 14 }, { wch: 14 }, { wch: 12 }, { wch: 14 }, { wch: 12 },
+        { wch: 50 }, { wch: 50 }, { wch: 50 },
+        { wch: 14 }, { wch: 14 }, { wch: 14 }, { wch: 12 },
+        { wch: 22 }, { wch: 16 }, { wch: 30 }, { wch: 60 }
+      ];
+
+      // Style header row (bold)
+      const range = XLSX.utils.decode_range(ws['!ref']);
+      for (let C = range.s.c; C <= range.e.c; C++) {
+        const addr = XLSX.utils.encode_cell({ r: 0, c: C });
+        if (!ws[addr]) continue;
+        ws[addr].s = {
+          font: { bold: true, color: { rgb: 'FFFFFF' } },
+          fill: { fgColor: { rgb: '1A1C2E' } },
+          alignment: { horizontal: 'center', vertical: 'center', wrapText: false }
+        };
+      }
+
+      const wb = XLSX.utils.book_new();
+      XLSX.utils.book_append_sheet(wb, ws, 'Cartas Magic');
+
+      const filename = `magicretion_${new Date().toISOString().slice(0, 10)}.xlsx`;
+      XLSX.writeFile(wb, filename);
+      showToast('Excel exportado ✓');
+    }
+  </script>
+</body>
+
+</html>
