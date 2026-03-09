@@ -327,32 +327,71 @@ def add_card_to_shopify():
                     }
                     update_prices.requests.post(inv_url, headers=headers, json=inv_payload)
 
-        # 6. Intentar agregar el metacampo (puede fallar por las restricciones de categoría en Shopify)
+        # 6. Intentar agregar metacampos extendidos
         metafield_warning = None
         if card.get('id'):
             mf_url = f"https://{update_prices.SHOPIFY_STORE_URL}/admin/api/{update_prices.API_VERSION}/products/{product_id}/metafields.json"
-            mf_payload = {
-                "metafield": {
-                    "namespace": "custom",
-                    "key": "scryfall_id",
-                    "value": str(card.get('id')),
-                    "type": "single_line_text_field"
-                }
-            }
-            update_prices.requests.post(mf_url, headers=headers, json=mf_payload)
             
-            # También guardamos el margen personalizado para el actualizador diario
-            mf_margin_payload = {
-                "metafield": {
-                    "namespace": "custom",
-                    "key": "custom_margin",
-                    "value": str(margin),
-                    "type": "single_line_text_field"
+            # Mapas de traducción
+            RARITY_MAP = {"common": "Común", "uncommon": "Infrecuente", "rare": "Rara", "mythic": "Mítica", "special": "Especial", "bonus": "Bonus"}
+            COLOR_MAP = {"W": "Blanco", "U": "Azul", "B": "Negro", "R": "Rojo", "G": "Verde"}
+            TYPE_MAP = {"Creature": "Criatura", "Instant": "Instantáneo", "Sorcery": "Conjuro", "Artifact": "Artefacto", "Enchantment": "Encantamiento", "Land": "Tierra", "Planeswalker": "Planeswalker"}
+
+            # Extraer/Traducir datos
+            rarity_en = card.get('rarity', 'common')
+            rarity_es = RARITY_MAP.get(rarity_en, rarity_en.capitalize())
+            
+            type_line_en = card.get('type_line', '')
+            type_line_es = type_line_en
+            for en, es in TYPE_MAP.items():
+                type_line_es = type_line_es.replace(en, es)
+            
+            cmc = str(card.get('cmc', 0))
+            is_foil_val = "Verdadero" if card.get('foil') else "Falso"
+            
+            legalities = card.get('legalities', {})
+            formats_legal = [f.capitalize() for f, leg in legalities.items() if leg == 'legal']
+            formats_str = " • ".join(formats_legal[:5]) # Limitar a los primeros 5 para no saturar
+
+            set_code = card.get('set', '').lower()
+            
+            colors = card.get('colors', [])
+            if not colors and 'mana_cost' in card and card['mana_cost'] == "": # Tierras incoloras
+                 colors_str = "Incoloro"
+            elif len(colors) > 1:
+                colors_translated = [COLOR_MAP.get(c, c) for c in colors]
+                colors_str = "Multicolor • " + " • ".join(colors_translated)
+            else:
+                colors_str = " • ".join([COLOR_MAP.get(c, c) for c in colors]) if colors else "Incoloro"
+
+            metafields_to_add = [
+                {"key": "scryfall_id", "value": str(card.get('id'))},
+                {"key": "custom_margin", "value": str(margin)},
+                {"key": "rareza", "value": rarity_es},
+                {"key": "card_type", "value": type_line_es},
+                {"key": "coste_de_mana_convertido", "value": cmc},
+                {"key": "foil", "value": is_foil_val},
+                {"key": "formato", "value": formats_str},
+                {"key": "set_single", "value": set_code},
+                {"key": "color", "value": colors_str}
+            ]
+
+            errors_mf = []
+            for mf_data in metafields_to_add:
+                mf_payload = {
+                    "metafield": {
+                        "namespace": "custom",
+                        "key": mf_data["key"],
+                        "value": mf_data["value"],
+                        "type": "single_line_text_field"
+                    }
                 }
-            }
-            mf_res = update_prices.requests.post(mf_url, headers=headers, json=mf_margin_payload)
-            if mf_res.status_code != 201:
-                metafield_warning = "La carta fue creada exitosamente en Shopify, pero Shopify bloqueó el metacampo 'scryfall_id' debido a la restricción de 'Asignaciones de Categorías'. Para que se guarde automático, debes quitar la restricción del metacampo en Shopify."
+                mf_res = update_prices.requests.post(mf_url, headers=headers, json=mf_payload)
+                if mf_res.status_code != 201:
+                    errors_mf.append(mf_data["key"])
+
+            if errors_mf:
+                metafield_warning = f"Producto creado, pero fallaron algunos metacampos: {', '.join(errors_mf)}. Revisa las restricciones de categoría en Shopify."
 
         return jsonify({
             "message": "Product created successfully",
