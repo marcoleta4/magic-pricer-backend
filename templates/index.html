@@ -1453,6 +1453,27 @@ Be precise. The Set Code and Collector Number are the most important fields.`;
         }
       } catch(e) {
         console.error("No se pudo cargar la configuración:", e);
+    }
+
+    async function syncCK() {
+      const btn = document.getElementById('btnSyncCK');
+      const originalText = btn.innerHTML;
+      btn.innerHTML = `<div class="spinner" style="width:12px; height:12px; margin-right:4px;"></div> Sincronizando...`;
+      btn.disabled = true;
+
+      try {
+        const res = await fetch(`${API_BASE}/api/sync_ck`, { method: 'POST' });
+        const data = await res.json();
+        if(res.ok) {
+          showToast("✅ Precios de Card Kingdom actualizados");
+        } else {
+          throw new Error(data.error || "Error al sincronizar");
+        }
+      } catch(e) {
+        alert("Error: " + e.message);
+      } finally {
+        btn.innerHTML = originalText;
+        btn.disabled = false;
       }
     }
 

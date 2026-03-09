@@ -105,6 +105,7 @@ def sync_metafield_helper(product_id, namespace, key, value):
 
 # Importar las funciones de nuestro script de actualizacion
 import update_prices
+import cardkingdom_sync
 
 app = Flask(__name__)
 # Enable CORS so the local index.html can send requests to this server
@@ -165,6 +166,11 @@ def scheduled_price_update():
     update_prices.main()
     print("--- Scheduled Price Update Completed ---")
 
+def scheduled_ck_sync():
+    print(f"--- Running Scheduled Card Kingdom Sync at {datetime.now()} ---")
+    cardkingdom_sync.download_pricelist()
+    print("--- Card Kingdom Sync Completed ---")
+
 # Configurar el programador (Scheduler)
 scheduler = BackgroundScheduler(timezone=pytz.utc)
 
@@ -180,6 +186,21 @@ scheduler.add_job(
     minute=UPDATE_MINUTE,
     id='daily_price_sync'
 )
+
+# Tarea para sincronizar Card Kingdom a las 5:00 AM UTC (antes de la actualización de precios)
+scheduler.add_job(
+    scheduled_ck_sync,
+    trigger='cron',
+    hour=5,
+    minute=0,
+    id='daily_ck_sync'
+)
+
+# Si no existe el cache al iniciar, lo descargamos
+if not os.path.exists(cardkingdom_sync.CACHE_FILE):
+    # Lo lanzamos en el scheduler para no bloquear el inicio de la app
+    scheduler.add_job(scheduled_ck_sync, id='startup_ck_sync')
+
 scheduler.start()
 
 
@@ -260,6 +281,15 @@ def update_schedule():
 def get_schedule():
     cfg = get_config()
     return jsonify(cfg)
+
+@app.route("/api/sync_ck", methods=["POST"])
+def sync_ck_manual():
+    """Endpoint para forzar la descarga de precios de Card Kingdom."""
+    success = cardkingdom_sync.download_pricelist()
+    if success:
+        return jsonify({"message": "Sincronización de Card Kingdom exitosa"}), 200
+    else:
+        return jsonify({"error": "Falló la sincronización de Card Kingdom"}), 500
 
 @app.route("/api/reporte", methods=["GET"])
 def download_report():

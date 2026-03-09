@@ -1,7 +1,9 @@
 import os
 import requests
 import time
+import json
 from dotenv import load_dotenv
+import cardkingdom_sync
 
 load_dotenv()
 
@@ -147,6 +149,19 @@ def get_scryfall_price_clp(card_name, set_code=None, is_foil=False, margin=1.30)
                 eur_key = 'eur_foil' if is_foil else 'eur'
                 
                 clp_data = calculate_clp_price(prices.get(usd_key), prices.get(eur_key), margin)
+                
+                # --- INTEGRACIÓN CARD KINGDOM ---
+                ck_price_usd = cardkingdom_sync.get_ck_price(card_name, set_code, is_foil)
+                if ck_price_usd:
+                    print(f" -> Precio Card Kingdom encontrado: ${ck_price_usd} USD")
+                    # Calculamos el promedio: (Precio Scryfall + Precio CK) / 2
+                    if clp_data:
+                        # Scryfall calculate_clp_price usa un promedio interno de USD/EUR. 
+                        # Vamos a promediar el 'final' obtenido con el de CK convertido.
+                        ck_clp = (ck_price_usd * USD_TO_CLP) * margin
+                        final_promedio = (clp_data["final"] + ck_clp) / 2
+                        return round(final_promedio)
+                
                 if clp_data:
                     return clp_data["final"]
         return None
