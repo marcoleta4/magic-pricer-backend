@@ -421,14 +421,14 @@ def add_card_to_shopify():
     except ValueError:
         margin = 1.30
         
-    clp_non_foil = update_prices.calculate_clp_price(usd, eur, margin)
+    clp_non_foil = update_prices.calculate_clp_price(usd, eur, margin, ck_price=card.get('ck_price'))
 
     usd_foil = prices.get('usd_foil')
     eur_foil = prices.get('eur_foil')
-    clp_foil = update_prices.calculate_clp_price(usd_foil, eur_foil, margin)
+    clp_foil = update_prices.calculate_clp_price(usd_foil, eur_foil, margin, ck_price=card.get('ck_price_foil'))
 
     if clp_non_foil is None and clp_foil is None:
-         return jsonify({"error": "No price available in Scryfall (USD or EUR) to calculate CLP."}), 400
+         return jsonify({"error": "No price available in Scryfall (USD or EUR) or Card Kingdom to calculate CLP."}), 400
 
     # 3. Preparar el Payload del Producto
     tags = "singlemtg, single mtg"

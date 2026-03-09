@@ -80,9 +80,9 @@ def get_shopify_mtg_products():
 
     return products
 
-def calculate_clp_price(usd_str, eur_str, margin_pct=1.30):
+def calculate_clp_price(usd_str, eur_str, margin_pct=1.30, ck_price=None):
     """
-    Applies the same formula as the frontend to convert USD/EUR to Final CLP price.
+    Applies unified formula: Average(Scryfall USD, Scryfall EUR*1.05, CK Price) -> CLP
     """
     USD_TO_CLP = 970
     EUR_TO_USD = 1.05
@@ -96,10 +96,16 @@ def calculate_clp_price(usd_str, eur_str, margin_pct=1.30):
     if eur_str:
         try: eur = float(eur_str)
         except: pass
+    
+    ck = None
+    if ck_price:
+        try: ck = float(ck_price)
+        except: pass
 
     vals = []
     if usd is not None: vals.append(usd)
     if eur is not None: vals.append(eur * EUR_TO_USD)
+    if ck is not None: vals.append(ck)
 
     if not vals:
         return None
@@ -149,30 +155,19 @@ def get_scryfall_price_clp(card_name, set_code=None, is_foil=False, margin=1.30)
                 usd_key = 'usd_foil' if is_foil else 'usd'
                 eur_key = 'eur_foil' if is_foil else 'eur'
                 
-                clp_data = calculate_clp_price(prices.get(usd_key), prices.get(eur_key), margin)
-                
                 # --- INTEGRACIÓN CARD KINGDOM ---
                 ck_price_usd = cardkingdom_sync.get_ck_price(card_name, set_code, is_foil)
                 
-                # Retornamos un diccionario con toda la info para el reporte
-                result = {
-                    "final_price": None,
-                    "scryfall_clp": clp_data["final"] if clp_data else 0,
-                    "ck_usd": ck_price_usd or 0,
-                    "set_name": card.get("set_name", "")
-                }
-
-                if ck_price_usd:
-                    print(f" -> Precio Card Kingdom encontrado: ${ck_price_usd} USD")
-                    if clp_data:
-                        ck_clp = (ck_price_usd * USD_TO_CLP) * margin
-                        final_promedio = (clp_data["final"] + ck_clp) / 2
-                        result["final_price"] = round(final_promedio)
-                        return result
+                # Usar la nueva fórmula unificada (promedia Scryfall y CK si ambos existen)
+                clp_data = calculate_clp_price(prices.get(usd_key), prices.get(eur_key), margin, ck_price_usd)
                 
                 if clp_data:
-                    result["final_price"] = clp_data["final"]
-                    return result
+                    return {
+                        "final_price": clp_data["final"],
+                        "scryfall_clp": clp_data["final"], # Mantenemos key para compatibilidad
+                        "ck_usd": ck_price_usd or 0,
+                        "set_name": card.get("set_name", "")
+                    }
         return None
     except Exception as e:
         print(f"Error fetching from Scryfall for {card_name}: {e}")
