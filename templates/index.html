@@ -935,9 +935,12 @@
         
         <label for="schedMin" style="font-size:0.85rem; color:var(--text-muted); margin-left:10px;">Min (0-59):</label>
         <input type="number" id="schedMin" value="0" min="0" max="59" style="width:50px; padding:4px; font-size:0.85rem; background:var(--bg-glass); border:1px solid var(--border); color:#fff; border-radius:4px; text-align:center;">
+
+        <label for="schedMargin" style="font-size:0.85rem; color:var(--text-muted); margin-left:10px;">Margen Global:</label>
+        <input type="number" id="schedMargin" value="1.30" step="0.05" style="width:65px; padding:4px; font-size:0.85rem; background:var(--bg-glass); border:1px solid var(--border); color:#fff; border-radius:4px; text-align:center;">
         
         <button class="btn btn-ghost" onclick="updateSchedule()" style="padding:4px 12px; font-size:0.85rem; margin-left:10px; border-color:var(--blue-acc); color:var(--blue-acc)">
-           Guardar Horario
+           Guardar Horario y Margen
         </button>
       </div>
     </div>
@@ -1437,15 +1440,16 @@ Be precise. The Set Code and Collector Number are the most important fields.`;
     async function updateSchedule() {
       const h = document.getElementById('schedHour').value;
       const m = document.getElementById('schedMin').value;
+      const margin = document.getElementById('schedMargin').value;
       try {
         const res = await fetch(`${API_BASE}/api/update_schedule`, {
           method: 'POST',
           headers: {'Content-Type': 'application/json'},
-          body: JSON.stringify({hour: h, minute: m})
+          body: JSON.stringify({hour: h, minute: m, margin: margin})
         });
         const data = await res.json();
         if(!res.ok) throw new Error(data.error || "Error al actualizar");
-        showToast("✅ Horario actualizado. Próxima: " + data.next_update_utc);
+        showToast("✅ Horario y margen actualizados. Próxima: " + data.next_update_utc);
       } catch(e) {
         alert("Error: " + e.message);
       }

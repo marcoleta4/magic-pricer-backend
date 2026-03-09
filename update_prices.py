@@ -16,8 +16,13 @@ HEADERS = {
 
 def get_shopify_access_token():
     """
-    Get a short-lived access token using Shopify's Client Credentials Grant flow.
+    Get access token from env or using Shopify's Client Credentials Grant flow.
     """
+    # If we already have a direct Access Token (Custom App), use it.
+    token = os.getenv("SHOPIFY_ACCESS_TOKEN")
+    if token:
+        return token
+
     if not SHOPIFY_STORE_URL or not SHOPIFY_CLIENT_ID or not SHOPIFY_CLIENT_SECRET:
         print("Missing Shopify credentials in .env")
         return None
@@ -28,7 +33,6 @@ def get_shopify_access_token():
         "client_id": SHOPIFY_CLIENT_ID,
         "client_secret": SHOPIFY_CLIENT_SECRET
     }
-    
     try:
         response = requests.post(url, json=payload)
         response.raise_for_status()
@@ -103,7 +107,20 @@ def calculate_clp_price(usd_str, eur_str, margin_pct=1.30):
         "final": round(final_clp)
     }
 
-def get_scryfall_price_clp(card_name, set_code=None, is_foil=False):
+def get_product_metafield(product_id, namespace, key):
+    """
+    Fetch a specific metafield for a product.
+    """
+    url = f"https://{SHOPIFY_STORE_URL}/admin/api/{API_VERSION}/products/{product_id}/metafields.json"
+    response = requests.get(url, headers=HEADERS)
+    if response.status_code == 200:
+        metafields = response.json().get('metafields', [])
+        for mf in metafields:
+            if mf.get('namespace') == namespace and mf.get('key') == key:
+                return mf.get('value')
+    return None
+
+def get_scryfall_price_clp(card_name, set_code=None, is_foil=False, margin=1.30):
     """
     Get the price of a card from Scryfall and convert it to CLP Final Price.
     """
@@ -126,7 +143,7 @@ def get_scryfall_price_clp(card_name, set_code=None, is_foil=False):
                 usd_key = 'usd_foil' if is_foil else 'usd'
                 eur_key = 'eur_foil' if is_foil else 'eur'
                 
-                clp_data = calculate_clp_price(prices.get(usd_key), prices.get(eur_key))
+                clp_data = calculate_clp_price(prices.get(usd_key), prices.get(eur_key), margin)
                 if clp_data:
                     return clp_data["final"]
         return None
@@ -172,14 +189,25 @@ def main():
     updates_made = 0
     
     for product in products:
-        # Assuming the product title is the card name. 
-        # Customize this based on how you name your products.
+        product_id = product.get("id")
         card_name = product.get("title")
         
+        try:
+            default_margin = float(os.getenv("DEFAULT_MARGIN", "1.30"))
+        except:
+            default_margin = 1.30
+            
+        # Intentamos obtener el margen personalizado guardado en un metacampo
+        custom_margin_str = get_product_metafield(product_id, "custom", "custom_margin")
+        try:
+            margin = float(custom_margin_str) if custom_margin_str else default_margin
+            if margin != default_margin:
+                print(f" -> Usando margen personalizado: {margin}")
+        except ValueError:
+            margin = default_margin
+
         # You might have the set code in a tag or a metafield.
-        # For this example, we'll try to extract it or just search without it.
         tags = product.get("tags", "")
-        # Example: assuming tag is "SET_MH3"
         set_code = None
         for tag in tags.split(","):
             if tag.strip().startswith("SET_"):
@@ -190,14 +218,13 @@ def main():
             variant_title = variant.get("title", "").lower()
             current_price = variant.get("price")
             
-            # Determine if it's foil or not based on variant title or options
-            # Example: "Foil", "Non-Foil", or relying on option1/option2
             is_foil = "foil" in variant_title and "non-foil" not in variant_title
             
-            print(f"Checking Price for: {card_name} [{set_code}] - Foil: {is_foil}")
+            print(f"Checking Price for: {card_name} [{set_code}] - Foil: {is_foil} (Margin: {margin})")
             
-            new_price_clp = get_scryfall_price_clp(card_name, set_code, is_foil)
-            
+            new_price_clp_data = get_scryfall_price_clp(card_name, set_code, is_foil, margin)
+            new_price_clp = new_price_clp_data # Assuming scryfall_price_clp returns the float directly as per its definition
+
             if new_price_clp:
                 # Compare as strings / numbers carefully, ignoring decimals if comparing CLP integers
                 try:

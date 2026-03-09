@@ -96,8 +96,8 @@ def health_check():
 @app.route("/api/update_schedule", methods=["POST"])
 def update_schedule():
     """
-    Endpoint para cambiar la hora de la actualización automática desde el HTML.
-    Recibe la hora (0-23) y minuto (0-59).
+    Endpoint para cambiar la hora de la actualización automática desde el HTML y el margen global.
+    Recibe la hora (0-23), minuto (0-59), y margen (float).
     """
     data = request.json
     if not data or 'hour' not in data or 'minute' not in data:
@@ -105,10 +105,32 @@ def update_schedule():
 
     new_hour = int(data.get('hour'))
     new_minute = int(data.get('minute'))
+    new_margin = data.get('margin')
     
     if not (0 <= new_hour <= 23) or not (0 <= new_minute <= 59):
          return jsonify({"error": "Hora (0-23) o minuto (0-59) inválidos"}), 400
 
+    # Guardar en .env para que persista
+    env_file = ".env"
+    lines = []
+    if os.path.exists(env_file):
+        with open(env_file, 'r') as f:
+            lines = f.readlines()
+            
+    # Remove existing UPDATE_HOUR, UPDATE_MINUTE, DEFAULT_MARGIN
+    lines = [l for l in lines if not l.startswith(('UPDATE_HOUR=', 'UPDATE_MINUTE=', 'DEFAULT_MARGIN='))]
+    
+    lines.append(f"UPDATE_HOUR={new_hour}\n")
+    lines.append(f"UPDATE_MINUTE={new_minute}\n")
+    if new_margin:
+        try:
+            val = float(new_margin)
+            lines.append(f"DEFAULT_MARGIN={val}\n")
+        except ValueError:
+            pass
+            
+    with open(env_file, 'w') as f:
+        f.writelines(lines)
     scheduler.reschedule_job(
         'daily_price_sync',
         trigger='cron',
@@ -274,7 +296,18 @@ def add_card_to_shopify():
                     "type": "single_line_text_field"
                 }
             }
-            mf_res = update_prices.requests.post(mf_url, headers=headers, json=mf_payload)
+            update_prices.requests.post(mf_url, headers=headers, json=mf_payload)
+            
+            # También guardamos el margen personalizado para el actualizador diario
+            mf_margin_payload = {
+                "metafield": {
+                    "namespace": "custom",
+                    "key": "custom_margin",
+                    "value": str(margin),
+                    "type": "single_line_text_field"
+                }
+            }
+            mf_res = update_prices.requests.post(mf_url, headers=headers, json=mf_margin_payload)
             if mf_res.status_code != 201:
                 metafield_warning = "La carta fue creada exitosamente en Shopify, pero Shopify bloqueó el metacampo 'scryfall_id' debido a la restricción de 'Asignaciones de Categorías'. Para que se guarde automático, debes quitar la restricción del metacampo en Shopify."
 
