@@ -87,17 +87,38 @@ scheduler.start()
 
 @app.route("/api/health", methods=["GET"])
 def health_check():
-    # Check for presence of required credentials without revealing them
+    # Check for presence of required credentials
     store_url = os.getenv("SHOPIFY_STORE_URL")
     client_id = os.getenv("SHOPIFY_CLIENT_ID")
     client_secret = os.getenv("SHOPIFY_CLIENT_SECRET")
     access_token = os.getenv("SHOPIFY_ACCESS_TOKEN")
     
+    # Try a simple connectivity test to Shopify
+    shopify_status = "Unknown"
+    shopify_error = None
+    
+    test_token = update_prices.get_shopify_access_token()
+    if test_token and store_url:
+        try:
+            test_url = f"https://{store_url}/admin/api/{update_prices.API_VERSION}/shop.json"
+            headers = {"X-Shopify-Access-Token": test_token}
+            res = update_prices.requests.get(test_url, headers=headers, timeout=5)
+            if res.status_code == 200:
+                shopify_status = f"CONNECTED (Shop: {res.json().get('shop', {}).get('name')})"
+            else:
+                shopify_status = f"ERROR ({res.status_code})"
+                shopify_error = res.text
+        except Exception as e:
+            shopify_status = "EXCEPTION"
+            shopify_error = str(e)
+
     shopify_config = {
         "SHOPIFY_STORE_URL": "present" if store_url else "MISSING",
         "SHOPIFY_CLIENT_ID": "present" if client_id else "MISSING",
         "SHOPIFY_CLIENT_SECRET": "present" if client_secret else "MISSING",
-        "SHOPIFY_ACCESS_TOKEN": "present" if access_token else "optional/missing"
+        "SHOPIFY_ACCESS_TOKEN": "present" if access_token else "optional/missing",
+        "connectivity_test": shopify_status,
+        "shopify_response": shopify_error
     }
 
     return jsonify({
