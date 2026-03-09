@@ -18,6 +18,7 @@ HEADERS = {
 
 # Global margin used for updates
 DEFAULT_MARGIN = float(os.environ.get("DEFAULT_MARGIN", "1.30"))
+USD_TO_CLP = 970
 
 def get_shopify_access_token():
     """
@@ -152,18 +153,26 @@ def get_scryfall_price_clp(card_name, set_code=None, is_foil=False, margin=1.30)
                 
                 # --- INTEGRACIÓN CARD KINGDOM ---
                 ck_price_usd = cardkingdom_sync.get_ck_price(card_name, set_code, is_foil)
+                
+                # Retornamos un diccionario con toda la info para el reporte
+                result = {
+                    "final_price": None,
+                    "scryfall_clp": clp_data["final"] if clp_data else 0,
+                    "ck_usd": ck_price_usd or 0,
+                    "set_name": card.get("set_name", "")
+                }
+
                 if ck_price_usd:
                     print(f" -> Precio Card Kingdom encontrado: ${ck_price_usd} USD")
-                    # Calculamos el promedio: (Precio Scryfall + Precio CK) / 2
                     if clp_data:
-                        # Scryfall calculate_clp_price usa un promedio interno de USD/EUR. 
-                        # Vamos a promediar el 'final' obtenido con el de CK convertido.
                         ck_clp = (ck_price_usd * USD_TO_CLP) * margin
                         final_promedio = (clp_data["final"] + ck_clp) / 2
-                        return round(final_promedio)
+                        result["final_price"] = round(final_promedio)
+                        return result
                 
                 if clp_data:
-                    return clp_data["final"]
+                    result["final_price"] = clp_data["final"]
+                    return result
         return None
     except Exception as e:
         print(f"Error fetching from Scryfall for {card_name}: {e}")
@@ -239,17 +248,15 @@ def main():
             
             print(f"Checking Price for: {card_name} [{set_code}] - Foil: {is_foil} (Margin: {margin})")
             
-            new_price_clp_data = get_scryfall_price_clp(card_name, set_code, is_foil, margin)
-            new_price_clp = new_price_clp_data # Assuming scryfall_price_clp returns the float directly as per its definition
+            card_info = get_scryfall_price_clp(card_name, set_code, is_foil, margin)
+            new_price_clp = card_info["final_price"] if card_info else None
 
             if new_price_clp:
-                # Compare as strings / numbers carefully, ignoring decimals if comparing CLP integers
-                try:
-                    current_price_float = float(current_price)
-                except:
-                    current_price_float = 0
+                # Compare as strings / numbers carefully
+                try: current_price_float = float(current_price)
+                except: current_price_float = 0
                 
-                if abs(current_price_float - new_price_clp) > 1: # Tolerance of 1 peso
+                if abs(current_price_float - new_price_clp) > 1:
                     print(f" -> Updating price from {current_price} to {new_price_clp} CLP")
                     success = update_shopify_variant_price(variant_id, new_price_clp)
                     if success:
@@ -259,11 +266,11 @@ def main():
                             "Fecha": datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
                             "Carta": card_name,
                             "Set": set_code or '',
-                            "Set Name": card.get('set_name', ''),
+                            "Set Name": card_info.get('set_name', ''),
                             "Foil": "Sí" if is_foil else "No",
                             "Precio Anterior": current_price,
-                            "Precio Scryfall": clp_data.get("final") if clp_data else 0,
-                            "Precio CK USD": ck_price_usd or 0,
+                            "Precio Scryfall": card_info.get("scryfall_clp") or 0,
+                            "Precio CK USD": card_info.get("ck_usd") or 0,
                             "Precio Nuevo": new_price_clp
                         })
                 else:
