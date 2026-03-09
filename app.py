@@ -1,4 +1,11 @@
+import os
+import json
+import base64
+import pytz
 from datetime import datetime
+from flask import Flask, request, jsonify, render_template
+from flask_cors import CORS
+from apscheduler.schedulers.background import BackgroundScheduler
 from supabase import create_client, Client
 
 # Configuración de Supabase
