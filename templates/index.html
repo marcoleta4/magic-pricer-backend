@@ -11,7 +11,22 @@
   <link
     href="https://fonts.googleapis.com/css2?family=Cinzel:wght@400;600;700&family=Inter:wght@300;400;500;600&display=swap"
     rel="stylesheet" />
-  <script src="https://cdn.sheetjs.com/xlsx-0.20.1/package/dist/xlsx.full.min.js"></script>
+   <script src="https://cdn.sheetjs.com/xlsx-0.20.1/package/dist/xlsx.full.min.js"></script>
+   <!-- Shopify App Bridge -->
+   <script src="https://unpkg.com/@shopify/app-bridge@3"></script>
+   <script>
+     const urlParams = new URLSearchParams(window.location.search);
+     const shop = urlParams.get('shop');
+     if (shop) {
+       var AppBridge = window['app-bridge'];
+       var createApp = AppBridge.default;
+       var app = createApp({
+         apiKey: 'TU_API_KEY_DE_PARTNERS', // La cambiaremos luego
+         host: urlParams.get('host'),
+         forceRedirect: true
+       });
+     }
+   </script>
   <style>
     :root {
       --bg-deep: #0a0b10;
