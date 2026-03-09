@@ -947,6 +947,14 @@
            Guardar Horario y Margen
         </button>
       </div>
+      <div style="display:flex; gap:10px; margin-left: auto;">
+        <button id="btnSyncCK" class="btn btn-ghost" onclick="syncCK()" style="padding:6px 14px; font-size:0.85rem; border-color:var(--gold); color:var(--gold);">
+           🔄 Actualizar Card Kingdom
+        </button>
+        <button id="btnForceSync" class="btn btn-ghost" onclick="forceScryfallSync()" style="padding:6px 14px; font-size:0.85rem; border-color:var(--success); color:var(--success);">
+           🚀 Forzar Sync Scryfall (Total)
+        </button>
+      </div>
     </div>
 
     <!-- PROGRESS -->
@@ -1111,6 +1119,16 @@
         try {
           const identified = await identifyCard(item.dataUrl, apiKey);
           const scryfallCard = await fetchScryfall(identified);
+          
+          // --- NUEVO: Buscar precio en Card Kingdom ---
+          try {
+            const ckRes = await fetch(`${API_BASE}/api/get_ck_price?name=${encodeURIComponent(scryfallCard.name)}&set=${scryfallCard.set}&foil=${identified.foil || false}`);
+            if (ckRes.ok) {
+              const ckData = await ckRes.json();
+              if (ckData.price) scryfallCard.ck_price = ckData.price;
+            }
+          } catch(e) { console.warn("CK Price fetch failed", e); }
+
           const resultIndex = results.length;
           const domId = cardEl.id;
           results.push({ item, identified, card: scryfallCard, domId });
@@ -1478,6 +1496,50 @@ Be precise. The Set Code and Collector Number are the most important fields.`;
       }
     }
 
+    async function forceScryfallSync() {
+      const btn = document.getElementById('btnForceSync');
+      const originalText = btn.innerHTML;
+      btn.innerHTML = `<div class="spinner" style="width:12px; height:12px; margin-right:4px;"></div> Ejecutando...`;
+      btn.disabled = true;
+
+      try {
+        const res = await fetch(`${API_BASE}/api/update_prices_manual`, { method: 'POST' });
+        const data = await res.json();
+        if(res.ok) {
+          showToast("🚀 Sincronización total iniciada correctamente");
+        } else {
+          throw new Error(data.error || "Error al iniciar sincronización");
+        }
+      } catch(e) {
+        alert("Error: " + e.message);
+      } finally {
+        btn.innerHTML = originalText;
+        btn.disabled = false;
+      }
+    }
+
+    async function syncCK() {
+      const btn = document.getElementById('btnSyncCK');
+      const originalText = btn.innerHTML;
+      btn.innerHTML = `<div class="spinner" style="width:12px; height:12px; margin-right:4px;"></div> Sincronizando...`;
+      btn.disabled = true;
+
+      try {
+        const res = await fetch(`${API_BASE}/api/sync_ck`, { method: 'POST' });
+        const data = await res.json();
+        if(res.ok) {
+          showToast("✅ Precios de Card Kingdom actualizados");
+        } else {
+          throw new Error(data.error || "Error al sincronizar");
+        }
+      } catch(e) {
+        alert("Error: " + e.message);
+      } finally {
+        btn.innerHTML = originalText;
+        btn.disabled = false;
+      }
+    }
+
     async function updateSchedule() {
       const h = document.getElementById('schedHour').value;
       const m = document.getElementById('schedMin').value;
@@ -1654,7 +1716,8 @@ Be precise. The Set Code and Collector Number are the most important fields.`;
               ${priceUSD ? `<div class="price-chip" style="padding: 2px 6px; font-size: 0.75rem;"><span class="price-label">USD</span><span class="price-val">${priceUSD}</span></div>` : ''}
               ${priceEUR ? `<div class="price-chip" style="padding: 2px 6px; font-size: 0.75rem;"><span class="price-label">EUR</span><span class="price-val">${priceEUR}</span></div>` : ''}
               ${priceUSDFoil ? `<div class="price-chip" style="padding: 2px 6px; font-size: 0.75rem;"><span class="price-label">Foil</span><span class="price-val foil">${priceUSDFoil}</span></div>` : ''}
-              ${!priceUSD && !priceEUR ? `<span style="font-size:0.75rem;color:var(--text-muted)">Sin precio base.</span>` : ''}
+              ${card.ck_price ? `<div class="price-chip" style="padding: 2px 6px; font-size: 0.75rem; border-color:var(--gold);"><span class="price-label" style="color:var(--gold);">CK USD</span><span class="price-val" style="color:var(--gold);">$${card.ck_price}</span></div>` : ''}
+              ${!priceUSD && !priceEUR && !card.ck_price ? `<span style="font-size:0.75rem;color:var(--text-muted)">Sin precio base.</span>` : ''}
             </div>
             
             <div style="display:flex; flex-direction:column; gap:8px;">

@@ -298,6 +298,29 @@ def sync_ck_manual():
     else:
         return jsonify({"error": "Falló la sincronización de Card Kingdom"}), 500
 
+@app.route("/api/update_prices_manual", methods=["POST"])
+def update_prices_manual():
+    """Forzar la ejecución del script de actualización de precios (Scryfall + CK)."""
+    try:
+        # Ejecutamos la función que el scheduler llamaría
+        scheduled_price_update()
+        return jsonify({"message": "Actualización de precios iniciada/completada"}), 200
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+
+@app.route("/api/get_ck_price", methods=["GET"])
+def get_ck_price_endpoint():
+    """Obtener el precio de Card Kingdom para una carta específica (para el frontend)."""
+    name = request.args.get('name')
+    set_code = request.args.get('set')
+    foil = request.args.get('foil') == 'true'
+    
+    if not name:
+        return jsonify({"error": "El nombre de la carta es requerido"}), 400
+        
+    price = cardkingdom_sync.get_ck_price(name, set_code, foil)
+    return jsonify({"price": price})
+
 @app.route("/api/reporte", methods=["GET"])
 def download_report():
     from flask import send_from_directory
