@@ -2,6 +2,8 @@ import os
 import requests
 import time
 import json
+import csv
+import datetime
 from dotenv import load_dotenv
 import cardkingdom_sync
 from supabase import create_client, Client
@@ -294,51 +296,38 @@ def main():
         except ValueError:
             margin = default_margin
 
-        # You might have the set code in a tag or a metafield.
-        tags = product.get("tags", "")
-        set_code = None
-        for tag in tags.split(","):
-            if tag.strip().startswith("SET_"):
-                set_code = tag.strip().split("_")[1].lower()
-                
-        for variant in product.get("variants", []):
-            variant_id = variant.get("id")
-            variant_title = variant.get("title", "").lower()
-            current_price = variant.get("price")
-            
-            is_foil = "foil" in variant_title and "non-foil" not in variant_title
-            
-            print(f"Checking Price for: {card_name} [{set_code}] - Foil: {is_foil} (Margin: {margin})")
-            
-            card_info = get_scryfall_price_clp(card_name, set_code, is_foil, margin)
-            new_price_clp = card_info["final_price"] if card_info else None
+        is_foil = "foil" in variant_title and "non-foil" not in variant_title
+        
+        print(f"Checking Price for: {card_name} [{set_code}] - Foil: {is_foil} (Margin: {margin})")
+        
+        card_info = get_scryfall_price_clp(card_name, set_code, is_foil, margin)
+        new_price_clp = card_info["final_price"] if card_info else None
 
-            if new_price_clp:
-                # Compare as strings / numbers carefully
-                try: current_price_float = float(current_price)
-                except: current_price_float = 0
-                
-                if abs(current_price_float - new_price_clp) > 1:
-                    print(f" -> Updating price from {current_price} to {new_price_clp} CLP")
-                    success = update_shopify_variant_price(variant_id, new_price_clp)
-                    if success:
-                        updates_made += 1
-                        import datetime
-                        report_data.append({
-                            "Fecha": datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
-                            "Carta": card_name,
-                            "Set": set_code or '',
-                            "Set Name": card_info.get('set_name', ''),
-                            "Foil": "Sí" if is_foil else "No",
-                            "Precio Anterior": current_price,
-                            "Precio Scryfall": card_info.get("scryfall_clp") or 0,
-                            "Precio CK USD": card_info.get("ck_usd") or 0,
-                            "Precio Nuevo": new_price_clp
-                        })
-                else:
-                    print(f" -> Price is already up to date ({current_price} CLP).")
+        if new_price_clp:
+            # Compare as strings / numbers carefully
+            try: current_price_float = float(current_price)
+            except: current_price_float = 0
+            
+            if abs(current_price_float - new_price_clp) > 1:
+                print(f" -> Updating price from {current_price} to {new_price_clp} CLP")
+                success = update_shopify_variant_price(variant_id, new_price_clp)
+                if success:
+                    updates_made += 1
+                    report_data.append({
+                        "Fecha": datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
+                        "Carta": card_name,
+                        "Set": set_code or '',
+                        "Set Name": card_info.get('set_name', ''),
+                        "Foil": "Sí" if is_foil else "No",
+                        "Precio Anterior": current_price,
+                        "Precio Scryfall": card_info.get("scryfall_clp") or 0,
+                        "Precio CK USD": card_info.get("ck_usd") or 0,
+                        "Precio Nuevo": new_price_clp
+                    })
             else:
-                print(f" -> No price found on Scryfall.")
+                print(f" -> Price is already up to date ({current_price} CLP).")
+        else:
+            print(f" -> No price found on Scryfall.")
 
     print(f"Finished. Updated {updates_made} variants.")
     
@@ -357,10 +346,9 @@ def main():
         print(f"Report saved to absolute path: {report_path}")
         # Finalizar registro en Supabase
         if sync_id and supabase:
-            from datetime import datetime
             supabase.table("sync_history").update({
                 "status": "completed",
-                "finished_at": datetime.now().isoformat(),
+                "finished_at": datetime.datetime.now().isoformat(),
                 "cards_processed": total_cards,
                 "updates_made": updates_made,
                 "report_available": True
