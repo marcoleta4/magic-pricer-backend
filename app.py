@@ -325,19 +325,53 @@ def ck_cache_info():
         size = 0
         mtime = None
         count = 0
+        sample = None
         if exists:
             size = os.path.getsize(cardkingdom_sync.CACHE_FILE)
             mtime = datetime.fromtimestamp(os.path.getmtime(cardkingdom_sync.CACHE_FILE)).strftime("%Y-%m-%d %H:%M:%S")
             with open(cardkingdom_sync.CACHE_FILE, 'r', encoding='utf-8') as f:
                 cache = json.load(f)
                 count = len(cache)
+                if count > 0:
+                    sample = list(cache.keys())[:3]
         
         return jsonify({
             "exists": exists,
             "size_bytes": size,
             "last_modified": mtime,
-            "items_count": count
+            "items_count": count,
+            "sample_keys": sample
         })
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+
+@app.route("/api/ck_debug", methods=["GET"])
+def ck_debug():
+    """Inspecciona la respuesta RAW de la API de Card Kingdom desde el servidor."""
+    import requests
+    url = "https://api.cardkingdom.com/api/v2/pricelist"
+    headers = {"User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36"}
+    try:
+        res = requests.get(url, headers=headers, timeout=30)
+        status = res.status_code
+        if status == 200:
+            data = res.json()
+            keys = list(data.keys())
+            first_item = None
+            raw_data = data.get("data", [])
+            if isinstance(raw_data, list) and len(raw_data) > 0:
+                first_item = raw_data[0]
+            elif isinstance(data, list) and len(data) > 0:
+                first_item = data[0]
+                
+            return jsonify({
+                "status": status,
+                "root_keys": keys,
+                "first_item_sample": first_item,
+                "is_list_root": isinstance(data, list)
+            })
+        else:
+            return jsonify({"status": status, "error": res.text[:500]})
     except Exception as e:
         return jsonify({"error": str(e)}), 500
 
