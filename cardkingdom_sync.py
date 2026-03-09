@@ -15,17 +15,25 @@ def download_pricelist():
     try:
         response = requests.get(url, headers=headers, timeout=60)
         if response.status_code == 200:
+            content_type = response.headers.get('Content-Type', 'unknown')
+            content_len = len(response.content)
+            print(f"Respuesta recibida: {content_type}, Tamaño: {content_len} bytes")
+            
             data = response.json()
             # La API v2 puede devolver un dict con "data" o una lista directamente
             raw_cards = []
             if isinstance(data, dict):
+                print(f"Estructura dict detectada. Claves: {list(data.keys())}")
                 raw_cards = data.get("data", [])
             elif isinstance(data, list):
+                print(f"Estructura list detectada. Items: {len(data)}")
                 raw_cards = data
+            
+            print(f"Procesando {len(raw_cards)} cartas...")
             
             # Procesar para búsqueda rápida: "Nombre|Edicion|Foil": precio
             processed_cache = {}
-            for card in raw_cards:
+            for i, card in enumerate(raw_cards):
                 # v2 usa nm para name, edition para edition, sell_price para el precio
                 name = card.get("nm") or card.get("name")
                 edition = card.get("edition")
@@ -36,6 +44,9 @@ def download_pricelist():
                     # Normalizar nombres para evitar fallos por espacios/caracteres
                     key = f"{name.strip()}|{edition.strip() if edition else ''}|{'foil' if is_foil else 'non'}"
                     processed_cache[key] = float(price)
+                
+                if i == 0:
+                    print(f"Ejemplo de carta 0: {card}")
             
             with open(CACHE_FILE, "w", encoding="utf-8") as f:
                 json.dump(processed_cache, f)

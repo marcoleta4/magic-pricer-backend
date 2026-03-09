@@ -348,31 +348,22 @@ def ck_cache_info():
 
 @app.route("/api/ck_debug", methods=["GET"])
 def ck_debug():
-    """Inspecciona la respuesta RAW de la API de Card Kingdom desde el servidor."""
+    """Inspecciona el inicio de la respuesta de Card Kingdom de forma eficiente (sin crash de memoria)."""
     import requests
     url = "https://api.cardkingdom.com/api/v2/pricelist"
     headers = {"User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36"}
     try:
-        res = requests.get(url, headers=headers, timeout=30)
-        status = res.status_code
-        if status == 200:
-            data = res.json()
-            keys = list(data.keys())
-            first_item = None
-            raw_data = data.get("data", [])
-            if isinstance(raw_data, list) and len(raw_data) > 0:
-                first_item = raw_data[0]
-            elif isinstance(data, list) and len(data) > 0:
-                first_item = data[0]
-                
+        # Usamos stream=True para no cargar los 100MB+ en memoria
+        with requests.get(url, headers=headers, timeout=20, stream=True) as res:
+            status = res.status_code
+            # Leer solo los primeros 5KB para ver la estructura
+            chunk = next(res.iter_content(chunk_size=5120), b"").decode('utf-8', errors='ignore')
+            
             return jsonify({
                 "status": status,
-                "root_keys": keys,
-                "first_item_sample": first_item,
-                "is_list_root": isinstance(data, list)
+                "peek_5kb": chunk[:5000],
+                "note": "La respuesta completa es demasiado grande para mostrarla aquí sin colapsar el servidor."
             })
-        else:
-            return jsonify({"status": status, "error": res.text[:500]})
     except Exception as e:
         return jsonify({"error": str(e)}), 500
 
