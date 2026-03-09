@@ -8,6 +8,8 @@ from flask import Flask, request, jsonify, render_template
 from flask_cors import CORS
 from apscheduler.schedulers.background import BackgroundScheduler
 from supabase import create_client, Client
+import update_prices
+import cardkingdom_sync
 
 # Configuración de Supabase
 SUPABASE_URL = os.environ.get("SUPABASE_URL")
@@ -111,9 +113,7 @@ def sync_metafield_helper(product_id, namespace, key, value):
         print(f"Error sync_metafield_helper: {e}")
         return False
 
-# Importar las funciones de nuestro script de actualizacion
-import update_prices
-import cardkingdom_sync
+# Already imported at top
 
 app = Flask(__name__)
 # Enable CORS so the local index.html can send requests to this server
@@ -204,13 +204,24 @@ scheduler.add_job(
     id='daily_ck_sync'
 )
 
-# Si no existe el cache al iniciar, lo descargamos
+@app.route("/api/sync_history", methods=["GET"])
+def get_sync_history_endpoint():
+    """Retorna los últimos 10 rgistros de sincronización."""
+    if not supabase:
+        return jsonify([])
+    try:
+        res = supabase.table("sync_history").select("*").order("started_at", desc=True).limit(10).execute()
+        return jsonify(res.data or [])
+    except Exception as e:
+        print(f"Error fetching sync history: {e}")
+        return jsonify([])
+
+# Start Scheduler
 if not os.path.exists(cardkingdom_sync.CACHE_FILE):
     # Lo lanzamos en el scheduler para no bloquear el inicio de la app
     scheduler.add_job(scheduled_ck_sync, id='startup_ck_sync')
 
 scheduler.start()
-
 
 @app.route("/api/health", methods=["GET"])
 def health_check():
@@ -220,7 +231,6 @@ def health_check():
     client_secret = os.getenv("SHOPIFY_CLIENT_SECRET")
     access_token = os.getenv("SHOPIFY_ACCESS_TOKEN")
     
-    # Try a simple connectivity test to Shopify
     shopify_status = "Unknown"
     shopify_error = None
     

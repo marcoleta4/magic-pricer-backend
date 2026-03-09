@@ -1,3 +1,8 @@
+import os
+import requests
+import time
+import json
+from dotenv import load_dotenv
 import cardkingdom_sync
 from supabase import create_client, Client
 
@@ -14,7 +19,6 @@ if SUPABASE_URL and SUPABASE_KEY:
     except Exception as e:
         print(f"Error al conectar con Supabase en update_prices: {e}")
 
-load_dotenv()
 
 SHOPIFY_STORE_URL = os.getenv("SHOPIFY_STORE_URL")
 SHOPIFY_CLIENT_ID = os.getenv("SHOPIFY_CLIENT_ID")
