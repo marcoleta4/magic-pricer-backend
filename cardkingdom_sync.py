@@ -16,20 +16,25 @@ def download_pricelist():
         response = requests.get(url, headers=headers, timeout=60)
         if response.status_code == 200:
             data = response.json()
-            raw_cards = data.get("data", [])
+            # La API v2 puede devolver un dict con "data" o una lista directamente
+            raw_cards = []
+            if isinstance(data, dict):
+                raw_cards = data.get("data", [])
+            elif isinstance(data, list):
+                raw_cards = data
             
-            # Procesar para búsqueda rápida: "Nombre [Edicion]": precio
+            # Procesar para búsqueda rápida: "Nombre|Edicion|Foil": precio
             processed_cache = {}
             for card in raw_cards:
-                name = card.get("nm")
+                # v2 usa nm para name, edition para edition, sell_price para el precio
+                name = card.get("nm") or card.get("name")
                 edition = card.get("edition")
-                price = card.get("sell_price")
+                price = card.get("sell_price") or card.get("price")
                 
-                if name and edition and price:
-                    # Guardamos tanto regular como foil (CK suele tener lineas distintas o flags)
-                    # En la API v1, 'is_foil' indica si la entrada es foil.
-                    is_foil = card.get("is_foil") == "true" or card.get("is_foil") is True
-                    key = f"{name}|{edition}|{'foil' if is_foil else 'non'}"
+                if name and price:
+                    is_foil = str(card.get("is_foil")).lower() == "true" or card.get("is_foil") is True
+                    # Normalizar nombres para evitar fallos por espacios/caracteres
+                    key = f"{name.strip()}|{edition.strip() if edition else ''}|{'foil' if is_foil else 'non'}"
                     processed_cache[key] = float(price)
             
             with open(CACHE_FILE, "w", encoding="utf-8") as f:
