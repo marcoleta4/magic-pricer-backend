@@ -310,17 +310,36 @@ def update_prices_manual():
         return jsonify({"error": str(e)}), 500
 
 @app.route("/api/get_ck_price", methods=["GET"])
-def get_ck_price_endpoint():
-    """Obtener el precio de Card Kingdom para una carta específica (para el frontend)."""
-    name = request.args.get('name')
-    set_code = request.args.get('set')
-    foil = request.args.get('foil') == 'true'
-    
-    if not name:
-        return jsonify({"error": "El nombre de la carta es requerido"}), 400
-        
-    price = cardkingdom_sync.get_ck_price(name, set_code, foil)
+def get_ck_price():
+    name = request.args.get("name")
+    edition = request.args.get("set")
+    is_foil = request.args.get("foil", "false").lower() == "true"
+    price = cardkingdom_sync.get_ck_price(name, edition, is_foil)
     return jsonify({"price": price})
+
+@app.route("/api/ck_cache_info", methods=["GET"])
+def ck_cache_info():
+    """Endpoint de depuración para ver el estado del caché de CK."""
+    try:
+        exists = os.path.exists(cardkingdom_sync.CACHE_FILE)
+        size = 0
+        mtime = None
+        count = 0
+        if exists:
+            size = os.path.getsize(cardkingdom_sync.CACHE_FILE)
+            mtime = datetime.fromtimestamp(os.path.getmtime(cardkingdom_sync.CACHE_FILE)).strftime("%Y-%m-%d %H:%M:%S")
+            with open(cardkingdom_sync.CACHE_FILE, 'r', encoding='utf-8') as f:
+                cache = json.load(f)
+                count = len(cache)
+        
+        return jsonify({
+            "exists": exists,
+            "size_bytes": size,
+            "last_modified": mtime,
+            "items_count": count
+        })
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
 
 @app.route("/api/reporte", methods=["GET"])
 def download_report():
