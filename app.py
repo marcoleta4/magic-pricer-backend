@@ -159,6 +159,7 @@ def health_check():
     return jsonify({
         "status": "ok", 
         "shopify": status,
+        "supabase": "Connected" if supabase else "MISSING",
         "next_sync": str(scheduler.get_job('daily_price_sync').next_run_time)
     })
 

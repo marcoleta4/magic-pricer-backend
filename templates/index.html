@@ -1079,6 +1079,7 @@
   <div id="toast"></div>
 
   <script>
+    const API_BASE = window.location.origin;
     let results = [];
     let isPollingSync = false;
 
@@ -1123,8 +1124,18 @@
 
     async function loadSyncHistory() {
       const tbody = document.getElementById('syncHistoryBody');
+      if (!tbody) return;
+      
       try {
-        const res = await fetch(`${API_BASE}/api/sync_history`);
+        const url = `${API_BASE}/api/sync_history`;
+        console.log("Fetching history from:", url);
+        const res = await fetch(url);
+        
+        if (!res.ok) {
+            const errText = await res.text();
+            throw new Error(`Error HTTP ${res.status}: ${errText.substring(0, 100)}`);
+        }
+        
         const data = await res.json();
         
         if (!data || data.length === 0) {
@@ -1133,8 +1144,8 @@
         }
 
         tbody.innerHTML = data.map(log => {
-          const date = new Date(log.started_at).toLocaleString('es-CL');
-          const statusClass = `status-pill status-${log.status}`;
+          const date = log.started_at ? new Date(log.started_at).toLocaleString('es-CL') : 'N/A';
+          const statusClass = `status-pill status-${log.status || 'unknown'}`;
           const reportIcon = log.report_available ? 
             `<a href="#" onclick="downloadReport(); return false;" title="Descargar este reporte" style="color:var(--blue-acc); text-decoration:none;">📄 CSV</a>` : 
             '<span style="color:var(--text-muted)">-</span>';
@@ -1143,23 +1154,21 @@
             <tr>
               <td>${date}</td>
               <td><span class="${statusClass}">${log.status}</span></td>
-              <td>${log.cards_processed} / ${log.total_cards}</td>
-              <td>${log.updates_made}</td>
+              <td>${log.cards_processed || 0} / ${log.total_cards || 0}</td>
+              <td>${log.updates_made || 0}</td>
               <td style="text-align:center;">${reportIcon}</td>
             </tr>
           `;
         }).join('');
       } catch (e) {
-        tbody.innerHTML = '<tr><td colspan="5" style="text-align:center; color:var(--error);">Error al cargar historial.</td></tr>';
+        console.error("Error en loadSyncHistory:", e);
+        tbody.innerHTML = `<tr><td colspan="5" style="text-align:center; color:var(--error); padding:20px;">Error al cargar historial: ${e.message}</td></tr>`;
       }
     }
 
     // ─── STATE ───────────────────────────────────────────────────────────────────
     let queue = []; // { file, dataUrl, name }
     let identifying = false;
-
-    // Conexión con el Servidor (Render o Local)
-    const API_BASE = window.location.origin;
 
     // ─── API KEY ──────────────────────────────────────────────────────────────────
     // API Key is now hardcoded
@@ -1678,27 +1687,6 @@ Be precise. The Set Code and Collector Number are the most important fields.`;
       }
     }
 
-    async function syncCK() {
-      const btn = document.getElementById('btnSyncCK');
-      const originalText = btn.innerHTML;
-      btn.innerHTML = `<div class="spinner" style="width:12px; height:12px; margin-right:4px;"></div> Sincronizando...`;
-      btn.disabled = true;
-
-      try {
-        const res = await fetch(`${API_BASE}/api/sync_ck`, { method: 'POST' });
-        const data = await res.json();
-        if(res.ok) {
-          showToast("✅ Precios de Card Kingdom actualizados");
-        } else {
-          throw new Error(data.error || "Error al sincronizar");
-        }
-      } catch(e) {
-        alert("Error: " + e.message);
-      } finally {
-        btn.innerHTML = originalText;
-        btn.disabled = false;
-      }
-    }
 
     async function updateSchedule() {
       const h = document.getElementById('schedHour').value;
