@@ -14,7 +14,7 @@ CORS(app)
 
 @app.route('/')
 def serve_index():
-    return render_template('index.html')
+    return render_template('index.html', GEMINI_API_KEY=os.environ.get('GEMINI_API_KEY', ''))
 
 @app.route('/api/add_metafield', methods=['POST'])
 def add_metafield_to_product():
