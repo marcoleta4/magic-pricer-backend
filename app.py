@@ -310,6 +310,56 @@ def update_prices_manual():
     except Exception as e:
         return jsonify({"error": str(e)}), 500
 
+@app.route("/api/sync_status", methods=["GET"])
+def get_sync_status():
+    """Obtiene el estado de la sincronización más reciente si está en ejecución."""
+    if not supabase:
+        return jsonify({"error": "Supabase no está configurado"}), 500
+    try:
+        # Buscamos la sync más reciente con estado 'running'
+        res = supabase.table("sync_history").select("*").eq("status", "running").order("started_at", desc=True).limit(1).execute()
+        if res.data:
+            return jsonify(res.data[0])
+        return jsonify({"status": "idle"})
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+
+@app.route("/api/sync_history", methods=["GET"])
+def get_sync_history():
+    """Obtiene las últimas 10 sincronizaciones."""
+    if not supabase:
+        return jsonify({"error": "Supabase no está configurado"}), 500
+    try:
+        res = supabase.table("sync_history").select("*").order("started_at", desc=True).limit(10).execute()
+        return jsonify(res.data)
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+
+@app.route("/api/sync_status", methods=["GET"])
+def get_sync_status():
+    """Obtiene el estado de la sincronización más reciente si está en ejecución."""
+    if not supabase:
+        return jsonify({"error": "Supabase no está configurado"}), 500
+    try:
+        # Buscamos la sync más reciente con estado 'running'
+        res = supabase.table("sync_history").select("*").eq("status", "running").order("started_at", desc=True).limit(1).execute()
+        if res.data:
+            return jsonify(res.data[0])
+        return jsonify({"status": "idle"})
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+
+@app.route("/api/sync_history", methods=["GET"])
+def get_sync_history():
+    """Obtiene las últimas 10 sincronizaciones."""
+    if not supabase:
+        return jsonify({"error": "Supabase no está configurado"}), 500
+    try:
+        res = supabase.table("sync_history").select("*").order("started_at", desc=True).limit(10).execute()
+        return jsonify(res.data)
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+
 @app.route("/api/get_ck_price", methods=["GET"])
 def get_ck_price():
     name = request.args.get("name")

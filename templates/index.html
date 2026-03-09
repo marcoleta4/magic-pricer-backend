@@ -632,6 +632,61 @@
       color: var(--text-muted);
     }
 
+    /* ─── SYNC LOGS & STATUS ─── */
+    .sync-monitor {
+      background: var(--bg-glass);
+      border: 1px solid var(--border);
+      border-radius: var(--radius);
+      padding: 24px;
+      margin-bottom: 28px;
+      backdrop-filter: blur(10px);
+    }
+    .sync-progress-container {
+      margin-bottom: 20px;
+      display: none; /* Hidden by default */
+    }
+    .progress-track {
+      width: 100%;
+      height: 10px;
+      background: rgba(255,255,255,0.05);
+      border-radius: 99px;
+      overflow: hidden;
+      margin: 10px 0;
+    }
+    .progress-bar {
+      height: 100%;
+      background: linear-gradient(90deg, var(--blue-acc), var(--gold));
+      width: 0%;
+      transition: width 0.5s ease;
+    }
+    .sync-history-table {
+      width: 100%;
+      border-collapse: collapse;
+      font-size: 0.85rem;
+      color: var(--text-muted);
+    }
+    .sync-history-table th {
+      text-align: left;
+      padding: 10px;
+      border-bottom: 1px solid var(--border);
+      color: var(--text);
+      font-weight: 500;
+    }
+    .sync-history-table td {
+      padding: 10px;
+      border-bottom: 1px solid rgba(255,255,255,0.02);
+    }
+    .status-pill {
+      padding: 2px 8px;
+      border-radius: 4px;
+      font-size: 0.75rem;
+      font-weight: 600;
+      text-transform: uppercase;
+    }
+    .status-running { background: rgba(74, 158, 255, 0.2); color: var(--blue-acc); }
+    .status-completed { background: rgba(80, 192, 128, 0.2); color: var(--success); }
+    .status-failed { background: rgba(224, 80, 80, 0.2); color: var(--error); }
+
     /* PRICES */
     .price-row {
       display: flex;
@@ -963,6 +1018,39 @@
     </div>
     <p class="progress-label" id="progressLabel"></p>
 
+    <!-- SYNC MONITOR -->
+    <div id="syncMonitor" class="sync-monitor">
+      <div id="syncProgressContainer" class="sync-progress-container">
+        <div style="display:flex; justify-content:space-between; align-items:center;">
+          <h3 style="margin:0; font-size:1rem; color:var(--blue-acc);">🔄 Sincronización en curso...</h3>
+          <span id="syncProgressPercent" style="font-weight:600; color:var(--gold);">0%</span>
+        </div>
+        <div class="progress-track"><div id="syncProgressBar" class="progress-bar"></div></div>
+        <p id="syncProgressMeta" style="font-size:0.8rem; color:var(--text-muted); margin:0;">Iniciando proceso en la nube...</p>
+      </div>
+
+      <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:15px;">
+        <h3 style="margin:0; font-size:1rem; color:var(--gold);">📋 Historial de Sincronizaciones</h3>
+        <button class="btn btn-ghost" onclick="loadSyncHistory()" style="padding:4px 10px; font-size:0.75rem;">Actualizar Historial</button>
+      </div>
+      <div style="overflow-x:auto;">
+        <table class="sync-history-table">
+          <thead>
+            <tr>
+              <th>Fecha/Hora</th>
+              <th>Estado</th>
+              <th>Procesadas</th>
+              <th>Actualizadas</th>
+              <th>Reporte</th>
+            </tr>
+          </thead>
+          <tbody id="syncHistoryBody">
+            <tr><td colspan="5" style="text-align:center; padding:20px;">Cargando historial...</td></tr>
+          </tbody>
+        </table>
+      </div>
+    </div>
+
     <!-- RESULTS HEADER -->
     <div class="results-header" id="resultsHeader">
       <span class="results-title">Resultados</span>
@@ -991,9 +1079,83 @@
   <div id="toast"></div>
 
   <script>
+    let results = [];
+    let isPollingSync = false;
+
+    // ─── INITIALIZATION ──────────────────────────────────────────────────────────
+    window.addEventListener('DOMContentLoaded', () => {
+      loadSettings();
+      loadSyncHistory();
+      startPollingSync(); // Verificar si hay algo corriendo al abrir
+    });
+
+    async function startPollingSync() {
+      if (isPollingSync) return;
+      isPollingSync = true;
+      pollSync();
+    }
+
+    async function pollSync() {
+      try {
+        const res = await fetch(`${API_BASE}/api/sync_status`);
+        const data = await res.json();
+        
+        const container = document.getElementById('syncProgressContainer');
+        if (data.status === 'running') {
+          container.style.display = 'block';
+          const percent = data.total_cards > 0 ? Math.round((data.cards_processed / data.total_cards) * 100) : 0;
+          document.getElementById('syncProgressBar').style.width = percent + '%';
+          document.getElementById('syncProgressPercent').innerText = percent + '%';
+          document.getElementById('syncProgressMeta').innerText = `Procesando: ${data.cards_processed} de ${data.total_cards} variaciones (${data.updates_made} cambios realizados)`;
+          
+          setTimeout(pollSync, 3000); // Poll every 3 seconds
+        } else {
+          container.style.display = 'none';
+          isPollingSync = false;
+          // Si acaba de terminar, recargar historial
+          loadSyncHistory();
+        }
+      } catch (e) {
+        console.error("Error polling sync status:", e);
+        isPollingSync = false;
+      }
+    }
+
+    async function loadSyncHistory() {
+      const tbody = document.getElementById('syncHistoryBody');
+      try {
+        const res = await fetch(`${API_BASE}/api/sync_history`);
+        const data = await res.json();
+        
+        if (!data || data.length === 0) {
+          tbody.innerHTML = '<tr><td colspan="5" style="text-align:center; padding:20px;">No hay historial aún.</td></tr>';
+          return;
+        }
+
+        tbody.innerHTML = data.map(log => {
+          const date = new Date(log.started_at).toLocaleString('es-CL');
+          const statusClass = `status-pill status-${log.status}`;
+          const reportIcon = log.report_available ? 
+            `<a href="#" onclick="downloadReport(); return false;" title="Descargar este reporte" style="color:var(--blue-acc); text-decoration:none;">📄 CSV</a>` : 
+            '<span style="color:var(--text-muted)">-</span>';
+          
+          return `
+            <tr>
+              <td>${date}</td>
+              <td><span class="${statusClass}">${log.status}</span></td>
+              <td>${log.cards_processed} / ${log.total_cards}</td>
+              <td>${log.updates_made}</td>
+              <td style="text-align:center;">${reportIcon}</td>
+            </tr>
+          `;
+        }).join('');
+      } catch (e) {
+        tbody.innerHTML = '<tr><td colspan="5" style="text-align:center; color:var(--error);">Error al cargar historial.</td></tr>';
+      }
+    }
+
     // ─── STATE ───────────────────────────────────────────────────────────────────
     let queue = []; // { file, dataUrl, name }
-    let results = []; // identified cards
     let identifying = false;
 
     // Conexión con el Servidor (Render o Local)

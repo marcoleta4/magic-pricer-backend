@@ -1,9 +1,18 @@
-import os
-import requests
-import time
-import json
-from dotenv import load_dotenv
 import cardkingdom_sync
+from supabase import create_client, Client
+
+load_dotenv()
+
+# Configuración de Supabase
+SUPABASE_URL = os.environ.get("SUPABASE_URL")
+SUPABASE_KEY = os.environ.get("SUPABASE_KEY")
+supabase: Client = None
+
+if SUPABASE_URL and SUPABASE_KEY:
+    try:
+        supabase = create_client(SUPABASE_URL, SUPABASE_KEY)
+    except Exception as e:
+        print(f"Error al conectar con Supabase en update_prices: {e}")
 
 load_dotenv()
 
@@ -196,10 +205,25 @@ def update_shopify_variant_price(variant_id, new_price):
         return False
 
 def main():
+    print("--- Starting Price Update Script ---")
+    
+    # 0. Crear registro de inicio en Supabase
+    sync_id = None
+    if supabase:
+        try:
+            res = supabase.table("sync_history").insert({"status": "running", "cards_processed": 0}).execute()
+            if res.data:
+                sync_id = res.data[0]["id"]
+        except Exception as e:
+            print(f"Error creating sync log: {e}")
+
     print("Authenticating with Shopify...")
     token = get_shopify_access_token()
     if not token:
         print("Failed to get Shopify access token. Exiting.")
+        # If sync failed, update Supabase status
+        if sync_id and supabase:
+            supabase.table("sync_history").update({"status": "failed", "errors": "Failed to get Shopify access token"}).eq("id", sync_id).execute()
         return
         
     HEADERS["X-Shopify-Access-Token"] = token
@@ -210,10 +234,49 @@ def main():
 
     updates_made = 0
     report_data = []
-    
+
+    all_variants = []
     for product in products:
         product_id = product.get("id")
         card_name = product.get("title")
+        tags = product.get("tags", "")
+        set_code = None
+        for tag in tags.split(","):
+            if tag.strip().startswith("SET_"):
+                set_code = tag.strip().split("_")[1].lower()
+
+        for variant in product.get("variants", []):
+            variant_data = {
+                "product_id": product_id,
+                "product_title": card_name,
+                "set_code": set_code,
+                "variant_id": variant.get("id"),
+                "variant_title": variant.get("title", "").lower(),
+                "current_price": variant.get("price")
+            }
+            all_variants.append(variant_data)
+    
+    total_cards = len(all_variants)
+    if sync_id and supabase:
+        supabase.table("sync_history").update({"total_cards": total_cards}).eq("id", sync_id).execute()
+
+    for i, variant_data in enumerate(all_variants):
+        # Update progress every 5 cards to avoid too many requests
+        if i % 5 == 0 and sync_id and supabase:
+            try:
+                supabase.table("sync_history").update({
+                    "cards_processed": i,
+                    "updates_made": updates_made
+                }).eq("id", sync_id).execute()
+            except Exception as e:
+                print(f"Error updating sync progress in Supabase: {e}")
+
+        product_id = variant_data.get("product_id")
+        card_name = variant_data.get("product_title")
+        set_code = variant_data.get("set_code")
+        variant_id = variant_data.get("variant_id")
+        variant_title = variant_data.get("variant_title")
+        current_price = variant_data.get("current_price")
         
         # Use the global margin from this module
         default_margin = DEFAULT_MARGIN
@@ -288,8 +351,24 @@ def main():
             for row in report_data:
                 writer.writerow(row)
         print(f"Report saved to absolute path: {report_path}")
+        # Finalizar registro en Supabase
+        if sync_id and supabase:
+            from datetime import datetime
+            supabase.table("sync_history").update({
+                "status": "completed",
+                "finished_at": datetime.now().isoformat(),
+                "cards_processed": total_cards,
+                "updates_made": updates_made,
+                "report_available": True
+            }).eq("id", sync_id).execute()
+
     except Exception as e:
         print(f"Failed to save report: {e}")
+        if sync_id and supabase:
+            supabase.table("sync_history").update({
+                "status": "failed",
+                "errors": str(e)
+            }).eq("id", sync_id).execute()
 
 if __name__ == "__main__":
     main()
