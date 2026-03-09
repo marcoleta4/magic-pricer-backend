@@ -1476,7 +1476,12 @@ Be precise. The Set Code and Collector Number are the most important fields.`;
             scryfall_id: res.card.id,
             rarity: res.card.rarity,
             card_type: res.card.type_line,
-            cmc: res.card.cmc
+            cmc: res.card.cmc,
+            foil: res.card.foil,
+            legalities: res.card.legalities,
+            set_single: res.card.set,
+            colors: res.card.colors,
+            mana_cost: res.card.mana_cost
           })
         });
         

@@ -41,6 +41,11 @@ def add_metafield_to_product():
     rarity_en = data.get('rarity')
     type_line_en = data.get('card_type')
     cmc = data.get('cmc')
+    is_foil_json = data.get('foil')
+    legalities = data.get('legalities', {})
+    set_single = data.get('set_single')
+    colors = data.get('colors', [])
+    mana_cost = data.get('mana_cost', '')
 
     if not product_id or not scryfall_id:
         return jsonify({"error": "Faltan datos obligatorios (product_id o scryfall_id)"}), 400
@@ -49,6 +54,7 @@ def add_metafield_to_product():
     
     RARITY_MAP = {"common": "Común", "uncommon": "Infrecuente", "rare": "Rara", "mythic": "Mítica", "special": "Especial", "bonus": "Bonus"}
     TYPE_MAP = {"Creature": "Criatura", "Instant": "Instantáneo", "Sorcery": "Conjuro", "Artifact": "Artefacto", "Enchantment": "Encantamiento", "Land": "Tierra", "Planeswalker": "Planeswalker"}
+    COLOR_MAP = {"W": "Blanco", "U": "Azul", "B": "Negro", "R": "Rojo", "G": "Verde"}
 
     metafields_to_add = [
         {"key": "scryfall_id", "value": str(scryfall_id)}
@@ -66,6 +72,30 @@ def add_metafield_to_product():
         
     if cmc is not None:
         metafields_to_add.append({"key": "coste_de_mana_convertido", "value": str(cmc)})
+        
+    if is_foil_json is True or is_foil_json is False: # Make sure string format is matched properly as it came from True/False in python to Javascript
+        is_foil_val = "Verdadero" if is_foil_json else "Falso"
+        metafields_to_add.append({"key": "foil", "value": is_foil_val})
+
+    if legalities:
+        formats_legal = [f.capitalize() for f, leg in legalities.items() if leg == 'legal']
+        formats_str = " • ".join(formats_legal[:5]) if formats_legal else ""
+        if formats_str:
+            metafields_to_add.append({"key": "formato", "value": formats_str})
+
+    if set_single:
+        metafields_to_add.append({"key": "set_single", "value": str(set_single).lower()})
+
+    # Color logic
+    if colors or mana_cost == "":
+        if not colors and mana_cost == "": 
+            colors_str = "Incoloro"
+        elif len(colors) > 1:
+            colors_translated = [COLOR_MAP.get(c, c) for c in colors]
+            colors_str = "Multicolor • " + " • ".join(colors_translated)
+        else:
+            colors_str = " • ".join([COLOR_MAP.get(c, c) for c in colors]) if colors else "Incoloro"
+        metafields_to_add.append({"key": "color", "value": colors_str})
 
     errors_mf = []
     for mf_data in metafields_to_add:
