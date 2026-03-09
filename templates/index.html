@@ -1471,7 +1471,11 @@ Be precise. The Set Code and Collector Number are the most important fields.`;
         const response = await fetch(`${API_BASE}/api/add_metafield`, {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ product_id: res.shopify_product_id, scryfall_id: res.card.id })
+          body: JSON.stringify({ 
+            product_id: res.shopify_product_id, 
+            scryfall_id: res.card.id,
+            rarity: res.card.rarity
+          })
         });
         
         const responseData = await response.json();
