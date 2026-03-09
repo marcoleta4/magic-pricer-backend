@@ -4,7 +4,7 @@ import os
 import time
 
 CACHE_FILE = "ck_cache.json"
-CK_API_URL = "https://api.cardkingdom.com/api/v1/pricelist"
+CK_API_URL = "https://api.cardkingdom.com/api/v2/pricelist"
 
 def download_pricelist():
     """Descarga la lista completa de precios de Card Kingdom y la procesa."""
