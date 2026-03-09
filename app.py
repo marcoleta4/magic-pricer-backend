@@ -370,11 +370,15 @@ def ck_debug():
 @app.route("/api/reporte", methods=["GET"])
 def download_report():
     from flask import send_from_directory
-    report_path = os.path.join(os.path.dirname(__file__), 'static', 'ultimo_reporte.csv')
+    BASE_DIR = os.path.dirname(os.path.abspath(__file__))
+    static_dir = os.path.join(BASE_DIR, 'static')
+    report_filename = 'ultimo_reporte.csv'
+    report_path = os.path.join(static_dir, report_filename)
+    
     if not os.path.exists(report_path):
-        return jsonify({"error": "No hay ningún reporte generado aún. La actualización automática debe correr al menos una vez."}), 404
-        
-    return send_from_directory('static', 'ultimo_reporte.csv', as_attachment=True)
+        return jsonify({"error": "No hay ningún reporte generado aún. La actualización automática debe correr al menos una vez (puede tardar unos minutos)."}), 404
+    
+    return send_from_directory(static_dir, report_filename, as_attachment=True)
 
 
 @app.route("/api/add_card", methods=["POST"])

@@ -275,10 +275,11 @@ def main():
 
     print(f"Finished. Updated {updates_made} variants.")
     
-    import csv
-    # Save the report CSV
-    os.makedirs('static', exist_ok=True)
-    report_path = os.path.join('static', 'ultimo_reporte.csv')
+    # Save the report CSV (Use absolute path to ensure durability)
+    BASE_DIR = os.path.dirname(os.path.abspath(__file__))
+    static_dir = os.path.join(BASE_DIR, 'static')
+    os.makedirs(static_dir, exist_ok=True)
+    report_path = os.path.join(static_dir, 'ultimo_reporte.csv')
     try:
         fieldnames = ["Fecha", "Carta", "Set", "Set Name", "Foil", "Precio Anterior", "Precio Scryfall", "Precio CK USD", "Precio Nuevo"]
         with open(report_path, 'w', newline='', encoding='utf-8') as f:
@@ -286,7 +287,7 @@ def main():
             writer.writeheader()
             for row in report_data:
                 writer.writerow(row)
-        print(f"Report saved to {report_path}")
+        print(f"Report saved to absolute path: {report_path}")
     except Exception as e:
         print(f"Failed to save report: {e}")
 
