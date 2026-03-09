@@ -1120,12 +1120,20 @@
           const identified = await identifyCard(item.dataUrl, apiKey);
           const scryfallCard = await fetchScryfall(identified);
           
-          // --- NUEVO: Buscar precio en Card Kingdom ---
+          // --- NUEVO: Buscar precios en Card Kingdom (Normal y Foil) ---
           try {
-            const ckRes = await fetch(`${API_BASE}/api/get_ck_price?name=${encodeURIComponent(scryfallCard.name)}&set=${scryfallCard.set}&foil=${identified.foil || false}`);
+            const [ckRes, ckFoilRes] = await Promise.all([
+              fetch(`${API_BASE}/api/get_ck_price?name=${encodeURIComponent(scryfallCard.name)}&set=${scryfallCard.set}&foil=false`),
+              fetch(`${API_BASE}/api/get_ck_price?name=${encodeURIComponent(scryfallCard.name)}&set=${scryfallCard.set}&foil=true`)
+            ]);
+            
             if (ckRes.ok) {
               const ckData = await ckRes.json();
               if (ckData.price) scryfallCard.ck_price = ckData.price;
+            }
+            if (ckFoilRes.ok) {
+              const ckFoilData = await ckFoilRes.json();
+              if (ckFoilData.price) scryfallCard.ck_price_foil = ckFoilData.price;
             }
           } catch(e) { console.warn("CK Price fetch failed", e); }
 
@@ -1459,21 +1467,6 @@ Be precise. The Set Code and Collector Number are the most important fields.`;
       }
     }
 
-    async function loadSettings() {
-      try {
-        const res = await fetch(`${API_BASE}/api/get_schedule`);
-        if(res.ok) {
-           const data = await res.json();
-           if(data.hour !== undefined) document.getElementById('schedHour').value = data.hour;
-           if(data.minute !== undefined) document.getElementById('schedMin').value = data.minute;
-           if(data.margin !== undefined) document.getElementById('schedMargin').value = data.margin;
-           console.log("Configuración cargada desde el servidor");
-        }
-      } catch(e) {
-        console.error("No se pudo cargar la configuración:", e);
-      }
-    }
-
     async function syncCK() {
       const btn = document.getElementById('btnSyncCK');
       const originalText = btn.innerHTML;
@@ -1483,16 +1476,18 @@ Be precise. The Set Code and Collector Number are the most important fields.`;
       try {
         const res = await fetch(`${API_BASE}/api/sync_ck`, { method: 'POST' });
         const data = await res.json();
-        if(res.ok) {
-          showToast("✅ Precios de Card Kingdom actualizados");
+        if(res.ok || res.status === 202) {
+          showToast("⏳ Sincronización CK iniciada en segundo plano. Esto puede tardar 1-2 minutos.");
         } else {
           throw new Error(data.error || "Error al sincronizar");
         }
       } catch(e) {
         alert("Error: " + e.message);
       } finally {
-        btn.innerHTML = originalText;
-        btn.disabled = false;
+        setTimeout(() => {
+          btn.innerHTML = originalText;
+          btn.disabled = false;
+        }, 3000);
       }
     }
 
@@ -1505,16 +1500,18 @@ Be precise. The Set Code and Collector Number are the most important fields.`;
       try {
         const res = await fetch(`${API_BASE}/api/update_prices_manual`, { method: 'POST' });
         const data = await res.json();
-        if(res.ok) {
-          showToast("🚀 Sincronización total iniciada correctamente");
+        if(res.ok || res.status === 202) {
+          showToast("🚀 Sync Total iniciado. Revisa el reporte en unos minutos.");
         } else {
           throw new Error(data.error || "Error al iniciar sincronización");
         }
       } catch(e) {
         alert("Error: " + e.message);
       } finally {
-        btn.innerHTML = originalText;
-        btn.disabled = false;
+        setTimeout(() => {
+          btn.innerHTML = originalText;
+          btn.disabled = false;
+        }, 3000);
       }
     }
 
@@ -1655,17 +1652,19 @@ Be precise. The Set Code and Collector Number are the most important fields.`;
 
       const currentMarginVal = results[index] && results[index].customMargin ? results[index].customMargin : 1.30;
 
-      const calcPriceClp = (usdStr, eurStr) => {
+      const calcPriceClp = (usdStr, eurStr, ckPrice) => {
         let usd = parseFloat(usdStr);
         let eur = parseFloat(eurStr);
+        let ck = parseFloat(ckPrice);
         let vals = [];
         if (!isNaN(usd)) vals.push(usd);
-        if (!isNaN(eur)) vals.push(eur * 1.05); // EUR to USD
+        if (!isNaN(eur)) vals.push(eur * 1.05); // EUR to USD approx
+        if (!isNaN(ck)) vals.push(ck);
 
         if (vals.length === 0) return null;
 
         let avgUsd = vals.reduce((a, b) => a + b, 0) / vals.length;
-        let costClp = avgUsd * 970;
+        let costClp = avgUsd * 970; // Tasa de cambio aprox.
         let finalClp = costClp * currentMarginVal;
 
         return {
@@ -1674,8 +1673,8 @@ Be precise. The Set Code and Collector Number are the most important fields.`;
         };
       };
 
-      const clp = calcPriceClp(prices.usd, prices.eur);
-      const clpFoil = calcPriceClp(prices.usd_foil, prices.eur_foil);
+      const clp = calcPriceClp(prices.usd, prices.eur, card.ck_price);
+      const clpFoil = calcPriceClp(prices.usd_foil, prices.eur_foil, card.ck_price_foil);
 
       const scryfallLink = card.scryfall_uri || `https://scryfall.com/card/${card.id}`;
       const tcgLink = card.purchase_uris?.tcgplayer || '';
@@ -1716,8 +1715,9 @@ Be precise. The Set Code and Collector Number are the most important fields.`;
               ${priceUSD ? `<div class="price-chip" style="padding: 2px 6px; font-size: 0.75rem;"><span class="price-label">USD</span><span class="price-val">${priceUSD}</span></div>` : ''}
               ${priceEUR ? `<div class="price-chip" style="padding: 2px 6px; font-size: 0.75rem;"><span class="price-label">EUR</span><span class="price-val">${priceEUR}</span></div>` : ''}
               ${priceUSDFoil ? `<div class="price-chip" style="padding: 2px 6px; font-size: 0.75rem;"><span class="price-label">Foil</span><span class="price-val foil">${priceUSDFoil}</span></div>` : ''}
-              ${card.ck_price ? `<div class="price-chip" style="padding: 2px 6px; font-size: 0.75rem; border-color:var(--gold);"><span class="price-label" style="color:var(--gold);">CK USD</span><span class="price-val" style="color:var(--gold);">$${card.ck_price}</span></div>` : ''}
-              ${!priceUSD && !priceEUR && !card.ck_price ? `<span style="font-size:0.75rem;color:var(--text-muted)">Sin precio base.</span>` : ''}
+              ${card.ck_price ? `<div class="price-chip" style="padding: 2px 6px; font-size: 0.75rem; border-color:var(--gold); border-style:solid; border-width:1px;"><span class="price-label" style="color:var(--gold);">CK USD</span><span class="price-val" style="color:var(--gold); text-shadow:0 0 5px rgba(255,215,0,0.3);">$${card.ck_price}</span></div>` : ''}
+              ${card.ck_price_foil ? `<div class="price-chip" style="padding: 2px 6px; font-size: 0.75rem; border-color:var(--gold); border-style:dashed; border-width:1px;"><span class="price-label" style="color:var(--gold);">CK Foil</span><span class="price-val" style="color:var(--gold); text-shadow:0 0 5px rgba(255,215,0,0.3);">$${card.ck_price_foil}</span></div>` : ''}
+              ${!priceUSD && !priceEUR && !card.ck_price && !card.ck_price_foil ? `<span style="font-size:0.75rem;color:var(--text-muted)">Sin precio base.</span>` : ''}
             </div>
             
             <div style="display:flex; flex-direction:column; gap:8px;">

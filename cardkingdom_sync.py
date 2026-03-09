@@ -50,24 +50,34 @@ def get_ck_price(card_name, edition=None, is_foil=False):
         with open(CACHE_FILE, "r", encoding="utf-8") as f:
             cache = json.load(f)
         
-        # Intentar búsqueda exacta
+        # 1. Búsqueda exacta (Nombre|Edicion|Foil)
         foil_key = 'foil' if is_foil else 'non'
-        # CK usa nombres de ediciones completos (ej: 'Limited Edition Alpha', 'Fourth Edition')
-        # A veces el 'edition' que pasamos es un set_code (ej: 'lea', '4ed').
-        # Por ahora buscaremos por nombre exacto si el edition coincide o si no se provee.
-        
-        # Búsqueda optimista
         if edition:
+            # Intentar con el código tal cual
             key = f"{card_name}|{edition}|{foil_key}"
             if key in cache:
                 return cache[key]
-        
-        # Búsqueda por nombre (devuelve el primero que encuentre si no hay edicion exacta)
-        # Nota: Esto es costoso si el cache es gigante, pero útil como fallback
+            
+            # Intentar búsqueda insensible a mayúsculas en las llaves
+            search_key = key.lower()
+            for k, price in cache.items():
+                if k.lower() == search_key:
+                    return price
+
+        # 2. Búsqueda por nombre (devuelve el primero que encuentre o el más barato)
+        # Esto ayuda cuando el código de set de Scryfall no coincide exactamente con el nombre de edición de CK.
+        matches = []
+        c_name_lower = card_name.lower()
         for key, price in cache.items():
-            k_name, k_ed, k_foil = key.split('|')
-            if k_name.lower() == card_name.lower() and k_foil == foil_key:
-                return price
+            parts = key.split('|')
+            if len(parts) < 3: continue
+            k_name, k_ed, k_foil = parts
+            if k_name.lower() == c_name_lower and k_foil == foil_key:
+                matches.append(price)
+                
+        if matches:
+            # Si hay varios, devolvemos el promedio o el más bajo para ser conservadores
+            return min(matches)
                 
         return None
     except Exception as e:

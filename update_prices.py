@@ -259,8 +259,11 @@ def main():
                             "Fecha": datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
                             "Carta": card_name,
                             "Set": set_code or '',
+                            "Set Name": card.get('set_name', ''),
                             "Foil": "Sí" if is_foil else "No",
                             "Precio Anterior": current_price,
+                            "Precio Scryfall": clp_data.get("final") if clp_data else 0,
+                            "Precio CK USD": ck_price_usd or 0,
                             "Precio Nuevo": new_price_clp
                         })
                 else:
@@ -275,8 +278,9 @@ def main():
     os.makedirs('static', exist_ok=True)
     report_path = os.path.join('static', 'ultimo_reporte.csv')
     try:
+        fieldnames = ["Fecha", "Carta", "Set", "Set Name", "Foil", "Precio Anterior", "Precio Scryfall", "Precio CK USD", "Precio Nuevo"]
         with open(report_path, 'w', newline='', encoding='utf-8') as f:
-            writer = csv.DictWriter(f, fieldnames=["Fecha", "Carta", "Set", "Foil", "Precio Anterior", "Precio Nuevo"])
+            writer = csv.DictWriter(f, fieldnames=fieldnames)
             writer.writeheader()
             for row in report_data:
                 writer.writerow(row)

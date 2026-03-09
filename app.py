@@ -291,20 +291,21 @@ def get_schedule():
 
 @app.route("/api/sync_ck", methods=["POST"])
 def sync_ck_manual():
-    """Endpoint para forzar la descarga de precios de Card Kingdom."""
-    success = cardkingdom_sync.download_pricelist()
-    if success:
-        return jsonify({"message": "Sincronización de Card Kingdom exitosa"}), 200
-    else:
-        return jsonify({"error": "Falló la sincronización de Card Kingdom"}), 500
+    """Endpoint para forzar la descarga de precios de Card Kingdom en segundo plano."""
+    try:
+        # Lanzamos el trabajo en el scheduler para ejecución inmediata
+        scheduler.add_job(scheduled_ck_sync, trigger='date', run_date=datetime.now(), id=f'manual_ck_sync_{int(time.time())}')
+        return jsonify({"message": "Sincronización de Card Kingdom iniciada en segundo plano"}), 202
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
 
 @app.route("/api/update_prices_manual", methods=["POST"])
 def update_prices_manual():
-    """Forzar la ejecución del script de actualización de precios (Scryfall + CK)."""
+    """Forzar la ejecución del script de actualización de precios en segundo plano."""
     try:
-        # Ejecutamos la función que el scheduler llamaría
-        scheduled_price_update()
-        return jsonify({"message": "Actualización de precios iniciada/completada"}), 200
+        # Lanzamos el trabajo en el scheduler para ejecución inmediata
+        scheduler.add_job(scheduled_price_update, trigger='date', run_date=datetime.now(), id=f'manual_price_sync_{int(time.time())}')
+        return jsonify({"message": "Sincronización total iniciada en segundo plano"}), 202
     except Exception as e:
         return jsonify({"error": str(e)}), 500
 
