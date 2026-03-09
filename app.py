@@ -40,6 +40,7 @@ def add_metafield_to_product():
     scryfall_id = data.get('scryfall_id')
     rarity_en = data.get('rarity')
     type_line_en = data.get('card_type')
+    cmc = data.get('cmc')
 
     if not product_id or not scryfall_id:
         return jsonify({"error": "Faltan datos obligatorios (product_id o scryfall_id)"}), 400
@@ -62,6 +63,9 @@ def add_metafield_to_product():
         for en, es in TYPE_MAP.items():
             type_line_es = type_line_es.replace(en, es)
         metafields_to_add.append({"key": "card_type", "value": type_line_es})
+        
+    if cmc is not None:
+        metafields_to_add.append({"key": "coste_de_mana_convertido", "value": str(cmc)})
 
     errors_mf = []
     for mf_data in metafields_to_add:
