@@ -87,9 +87,23 @@ scheduler.start()
 
 @app.route("/api/health", methods=["GET"])
 def health_check():
+    # Check for presence of required credentials without revealing them
+    store_url = os.getenv("SHOPIFY_STORE_URL")
+    client_id = os.getenv("SHOPIFY_CLIENT_ID")
+    client_secret = os.getenv("SHOPIFY_CLIENT_SECRET")
+    access_token = os.getenv("SHOPIFY_ACCESS_TOKEN")
+    
+    shopify_config = {
+        "SHOPIFY_STORE_URL": "present" if store_url else "MISSING",
+        "SHOPIFY_CLIENT_ID": "present" if client_id else "MISSING",
+        "SHOPIFY_CLIENT_SECRET": "present" if client_secret else "MISSING",
+        "SHOPIFY_ACCESS_TOKEN": "present" if access_token else "optional/missing"
+    }
+
     return jsonify({
         "status": "ok", 
         "message": "Shopify Price Sync API is running.",
+        "shopify_diagnostics": shopify_config,
         "next_update_utc": str(scheduler.get_job('daily_price_sync').next_run_time)
     })
 
@@ -149,8 +163,16 @@ def add_card_to_shopify():
     """
     Endpoint para que index.html envíe una carta y se cree en Shopify.
     """
-    if not update_prices.SHOPIFY_STORE_URL or not update_prices.SHOPIFY_CLIENT_ID:
-        return jsonify({"error": "Shopify credentials not configured in server."}), 500
+    store_url = update_prices.SHOPIFY_STORE_URL
+    client_id = update_prices.SHOPIFY_CLIENT_ID
+    
+    if not store_url or not client_id:
+        missing = []
+        if not store_url: missing.append("SHOPIFY_STORE_URL")
+        if not client_id: missing.append("SHOPIFY_CLIENT_ID")
+        return jsonify({
+            "error": f"Shopify credentials not configured in server. Missing: {', '.join(missing)}. Please set them in Render dashboard."
+        }), 500
 
     data = request.json
     if not data or 'card' not in data:
