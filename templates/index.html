@@ -1122,9 +1122,10 @@
           
           // --- NUEVO: Buscar precios en Card Kingdom (Normal y Foil) ---
           try {
+            const ckUrlBase = `${API_BASE}/api/get_ck_price`;
             const [ckRes, ckFoilRes] = await Promise.all([
-              fetch(`${API_BASE}/api/get_ck_price?name=${encodeURIComponent(scryfallCard.name)}&set=${scryfallCard.set}&foil=false`),
-              fetch(`${API_BASE}/api/get_ck_price?name=${encodeURIComponent(scryfallCard.name)}&set=${scryfallCard.set}&foil=true`)
+              fetch(`${ckUrlBase}?name=sfid:${scryfallCard.id}&foil=false`),
+              fetch(`${ckUrlBase}?name=sfid:${scryfallCard.id}&foil=true`)
             ]);
             
             if (ckRes.ok) {

@@ -49,14 +49,24 @@ def download_pricelist():
         # 3. Construir caché optimizado
         processed_cache = {}
         for i, card in enumerate(raw_cards):
-            name = card.get("nm") or card.get("name")
+            name = card.get("name") or card.get("nm")
             edition = card.get("edition")
-            price = card.get("sell_price") or card.get("price")
+            # El screenshot muestra "price_retail"
+            price = card.get("price_retail") or card.get("sell_price") or card.get("price")
+            sf_id = card.get("scryfall_id")
             
             if name and price:
                 is_foil = str(card.get("is_foil")).lower() == "true" or card.get("is_foil") is True
-                key = f"{name.strip()}|{edition.strip() if edition else ''}|{'foil' if is_foil else 'non'}"
-                processed_cache[key] = float(price)
+                foil_key = 'foil' if is_foil else 'non'
+                
+                # Guardamos por nombre/edicion (legacy)
+                key_name = f"{name.strip()}|{edition.strip() if edition else ''}|{foil_key}"
+                processed_cache[key_name] = float(price)
+                
+                # Guardamos por scryfall_id (exacto!)
+                if sf_id:
+                    key_id = f"sfid:{sf_id}|{foil_key}"
+                    processed_cache[key_id] = float(price)
         
         with open(CACHE_FILE, "w", encoding="utf-8") as f:
             json.dump(processed_cache, f)
@@ -76,8 +86,16 @@ def get_ck_price(card_name, edition=None, is_foil=False):
         with open(CACHE_FILE, "r", encoding="utf-8") as f:
             cache = json.load(f)
         
-        # 0. Resolución de nombre de edición (Set Code -> Full Name)
-        # CK usa nombres completos. Si edition es un código (ej: 'bok'), intentamos mapear.
+        foil_key = 'foil' if is_foil else 'non'
+
+        # 0. Búsqueda por Scryfall ID
+        # name puede ser un scryfall_id si viene con el prefijo sfid:
+        if card_name.startswith("sfid:"):
+            key_id = f"{card_name}|{foil_key}"
+            if key_id in cache: 
+                return cache[key_id]
+
+        # 1. Resolución de nombre de edición (Set Code -> Full Name)
         edition_full = edition
         common_sets = {
             "lea": "Limited Edition Alpha", "leb": "Limited Edition Beta", "2ed": "Unlimited Edition",
@@ -92,8 +110,6 @@ def get_ck_price(card_name, edition=None, is_foil=False):
         if edition and edition.lower() in common_sets:
             edition_full = common_sets[edition.lower()]
 
-        # 1. Búsqueda exacta (Nombre|Edición|Foil)
-        foil_key = 'foil' if is_foil else 'non'
         if edition_full:
             # Intentar con el nombre resuelto
             key = f"{card_name}|{edition_full}|{foil_key}"
