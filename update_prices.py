@@ -211,6 +211,14 @@ def update_shopify_variant_price(variant_id, new_price):
         return False
 
 def main():
+    try:
+        _run_main()
+    except Exception as e:
+        import traceback
+        with open("error_log.txt", "a") as f:
+            f.write(f"Global Error: {datetime.datetime.now()}\\n{traceback.format_exc()}\\n")
+
+def _run_main():
     print("--- Starting Price Update Script ---")
     
     # 0. Crear registro de inicio en Supabase
@@ -221,13 +229,14 @@ def main():
             if res.data:
                 sync_id = res.data[0]["id"]
         except Exception as e:
-            print(f"Error creating sync log: {e}")
+            msg = f"Error creating sync log: {e}"
+            print(msg)
+            with open("error_log.txt", "a") as f: f.write(msg + "\\n")
 
     print("Authenticating with Shopify...")
     token = get_shopify_access_token()
     if not token:
         print("Failed to get Shopify access token. Exiting.")
-        # If sync failed, update Supabase status
         if sync_id and supabase:
             supabase.table("sync_history").update({"status": "failed", "errors": "Failed to get Shopify access token"}).eq("id", sync_id).execute()
         return
@@ -235,7 +244,13 @@ def main():
     HEADERS["X-Shopify-Access-Token"] = token
     
     print("Fetching products from Shopify...")
-    products = get_shopify_mtg_products()
+    try:
+        products = get_shopify_mtg_products()
+    except Exception as e:
+        msg = f"Error fetching from shopify: {e}"
+        with open("error_log.txt", "a") as f: f.write(msg + "\\n")
+        return
+        
     print(f"Found {len(products)} products.")
 
     updates_made = 0
@@ -264,7 +279,10 @@ def main():
     
     total_cards = len(all_variants)
     if sync_id and supabase:
-        supabase.table("sync_history").update({"total_cards": total_cards}).eq("id", sync_id).execute()
+        try:
+            supabase.table("sync_history").update({"total_cards": total_cards}).eq("id", sync_id).execute()
+        except Exception as e:
+            with open("error_log.txt", "a") as f: f.write(f"Error updating total_cards: {e}\\n")
 
     for i, variant_data in enumerate(all_variants):
         # Update progress every 5 cards to avoid too many requests
@@ -287,30 +305,34 @@ def main():
         # Use the global margin from this module
         default_margin = DEFAULT_MARGIN
             
-        # Intentamos obtener el margen personalizado guardado en un metacampo
-        custom_margin_str = get_product_metafield(product_id, "custom", "custom_margin")
+        # Intentamos obtener el margin personalizado
         try:
+            custom_margin_str = get_product_metafield(product_id, "custom", "custom_margin")
             margin = float(custom_margin_str) if custom_margin_str else default_margin
-            if margin != default_margin:
-                print(f" -> Usando margen personalizado: {margin}")
-        except ValueError:
+        except Exception:
             margin = default_margin
 
         is_foil = "foil" in variant_title and "non-foil" not in variant_title
         
-        print(f"Checking Price for: {card_name} [{set_code}] - Foil: {is_foil} (Margin: {margin})")
-        
-        card_info = get_scryfall_price_clp(card_name, set_code, is_foil, margin)
+        try:
+            card_info = get_scryfall_price_clp(card_name, set_code, is_foil, margin)
+        except Exception as e:
+            with open("error_log.txt", "a") as f: f.write(f"Error in scryfall clp: {e}\\n")
+            continue
+            
         new_price_clp = card_info["final_price"] if card_info else None
 
         if new_price_clp:
-            # Compare as strings / numbers carefully
             try: current_price_float = float(current_price)
             except: current_price_float = 0
             
             if abs(current_price_float - new_price_clp) > 1:
-                print(f" -> Updating price from {current_price} to {new_price_clp} CLP")
-                success = update_shopify_variant_price(variant_id, new_price_clp)
+                try:
+                    success = update_shopify_variant_price(variant_id, new_price_clp)
+                except Exception as e:
+                    with open("error_log.txt", "a") as f: f.write(f"Error updating variants: {e}\\n")
+                    success = False
+                    
                 if success:
                     updates_made += 1
                     report_data.append({
@@ -324,10 +346,8 @@ def main():
                         "Precio CK USD": card_info.get("ck_usd") or 0,
                         "Precio Nuevo": new_price_clp
                     })
-            else:
-                print(f" -> Price is already up to date ({current_price} CLP).")
         else:
-            print(f" -> No price found on Scryfall.")
+            pass
 
     print(f"Finished. Updated {updates_made} variants.")
     
@@ -355,6 +375,8 @@ def main():
             }).eq("id", sync_id).execute()
 
     except Exception as e:
+        import traceback
+        with open("error_log.txt", "a") as f: f.write(f"Error al guardar csv: {traceback.format_exc()}\\n")
         print(f"Failed to save report: {e}")
         if sync_id and supabase:
             supabase.table("sync_history").update({

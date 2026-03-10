@@ -26,50 +26,36 @@ def download_pricelist():
         
         print(f"Descarga finalizada. Procesando archivo de {os.path.getsize(temp_raw_file)} bytes...")
         
-        # 2. Cargar y procesar (usamos una carga controlada si es posible)
-        with open(temp_raw_file, 'r', encoding='utf-8') as f:
-            data = json.load(f)
+        import ijson
         
-        # Borrar el archivo raw inmediatamente para liberar espacio
-        if os.path.exists(temp_raw_file):
-            os.remove(temp_raw_file)
-        
-        gc.collect() # Forzar liberación de memoria del buffer de lectura
-
-        raw_cards = []
-        if isinstance(data, dict):
-            raw_cards = data.get("data", [])
-        elif isinstance(data, list):
-            raw_cards = data
-        
-        # Liberar data original si es posible
-        del data
-        gc.collect()
-        
-        # 3. Construir caché optimizado
+        # 2. Cargar y procesar iterativamente con ijson para no agotar la RAM
         processed_cache = {}
-        for i, card in enumerate(raw_cards):
-            name = card.get("name") or card.get("nm")
-            edition = card.get("edition")
-            # El screenshot muestra "price_retail"
-            price = card.get("price_retail") or card.get("sell_price") or card.get("price")
-            sf_id = card.get("scryfall_id")
-            
-            if name and price:
-                is_foil = str(card.get("is_foil")).lower() == "true" or card.get("is_foil") is True
-                foil_key = 'foil' if is_foil else 'non'
+        with open(temp_raw_file, 'r', encoding='utf-8') as f:
+            # "data.item" means iterate over elements inside of the "data" array
+            cards = ijson.items(f, 'data.item')
+            for card in cards:
+                name = card.get("name") or card.get("nm")
+                edition = card.get("edition")
+                price = card.get("price_retail") or card.get("sell_price") or card.get("price")
+                sf_id = card.get("scryfall_id")
                 
-                # Guardamos por nombre/edicion (legacy)
-                key_name = f"{name.strip()}|{edition.strip() if edition else ''}|{foil_key}"
-                processed_cache[key_name] = float(price)
-                
-                # Guardamos por scryfall_id (exacto!)
-                if sf_id:
-                    key_id = f"sfid:{sf_id}|{foil_key}"
-                    processed_cache[key_id] = float(price)
+                if name and price:
+                    is_foil = str(card.get("is_foil")).lower() == "true" or card.get("is_foil") is True
+                    foil_key = 'foil' if is_foil else 'non'
+                    
+                    key_name = f"{name.strip()}|{edition.strip() if edition else ''}|{foil_key}"
+                    processed_cache[key_name] = float(price)
+                    
+                    if sf_id:
+                        key_id = f"sfid:{sf_id}|{foil_key}"
+                        processed_cache[key_id] = float(price)
         
         with open(CACHE_FILE, "w", encoding="utf-8") as f:
             json.dump(processed_cache, f)
+            
+        # Borrar el archivo raw después de terminar
+        if os.path.exists(temp_raw_file):
+            os.remove(temp_raw_file)
         
         print(f"Sincronización CK exitosa: {len(processed_cache)} entradas.")
         return True

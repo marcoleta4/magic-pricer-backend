@@ -179,6 +179,19 @@ def get_sync_history():
         return jsonify(res.data or [])
     except Exception as e: return jsonify([])
 
+@app.route("/api/get_ck_price", methods=["GET"])
+def get_ck_price_endpoint():
+    name = request.args.get('name')
+    edition = request.args.get('set_code')
+    foil_str = request.args.get('foil', 'false').lower()
+    is_foil = foil_str in ['true', '1', 'yes']
+    
+    if not name:
+        return jsonify({"error": "Missing card name"}), 400
+        
+    price = cardkingdom_sync.get_ck_price(name, edition, is_foil)
+    return jsonify({"price": price})
+
 @app.route("/api/update_schedule", methods=["POST"])
 def update_schedule():
     data = request.json
@@ -208,6 +221,14 @@ def download_report():
     path = os.path.join(os.path.dirname(__file__), 'static', 'ultimo_reporte.csv')
     if not os.path.exists(path): return jsonify({"error": "No report"}), 404
     return send_from_directory(os.path.dirname(path), 'ultimo_reporte.csv', as_attachment=True)
+
+@app.route("/api/logs", methods=["GET"])
+def get_logs():
+    import traceback
+    path = 'error_log.txt'
+    if not os.path.exists(path): return jsonify({"logs": "No logs."})
+    with open(path, 'r') as f:
+        return jsonify({"logs": f.read()})
 
 @app.route("/api/add_card", methods=["POST"])
 def add_card_to_shopify():
