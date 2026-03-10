@@ -207,12 +207,12 @@ def get_schedule():
 
 @app.route("/api/sync_ck", methods=["POST"])
 def sync_ck_manual():
-    scheduler.add_job(scheduled_ck_sync, trigger='date', run_date=datetime.now(), id=f'manual_ck_sync_{int(time.time())}')
+    scheduler.add_job(scheduled_ck_sync, id=f'manual_ck_sync_{int(time.time())}')
     return jsonify({"message": "Started"}), 202
 
 @app.route("/api/update_prices_manual", methods=["POST"])
 def update_prices_manual():
-    scheduler.add_job(scheduled_price_update, trigger='date', run_date=datetime.now(), id=f'manual_price_sync_{int(time.time())}')
+    scheduler.add_job(scheduled_price_update, id=f'manual_price_sync_{int(time.time())}')
     return jsonify({"message": "Started"}), 202
 
 @app.route("/api/reporte", methods=["GET"])
