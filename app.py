@@ -9,7 +9,7 @@ from flask_cors import CORS
 from apscheduler.schedulers.background import BackgroundScheduler
 from supabase import create_client, Client
 import update_prices
-import cardkingdom_sync
+# import cardkingdom_sync
 
 # --- CONFIGURATION & SUPABASE ---
 SUPABASE_URL = os.environ.get("SUPABASE_URL")
@@ -101,17 +101,17 @@ def scheduled_price_update():
     print("--- Scheduled Price Update Completed ---")
 
 def scheduled_ck_sync():
-    print(f"--- Running Scheduled Card Kingdom Sync at {datetime.now()} ---")
-    cardkingdom_sync.download_pricelist()
-    print("--- Card Kingdom Sync Completed ---")
+    print(f"--- Running Scheduled Card Kingdom Sync at {datetime.now()} (DISABLED) ---")
+    # cardkingdom_sync.download_pricelist()
+    print("--- Card Kingdom Sync Completed (DISABLED) ---")
 
 scheduler = BackgroundScheduler(timezone=pytz.utc)
 config = get_config()
 scheduler.add_job(scheduled_price_update, trigger='cron', hour=config.get("hour", 6), minute=config.get("minute", 0), id='daily_price_sync')
-scheduler.add_job(scheduled_ck_sync, trigger='cron', hour=5, minute=0, id='daily_ck_sync')
+# scheduler.add_job(scheduled_ck_sync, trigger='cron', hour=5, minute=0, id='daily_ck_sync')
 
-if not os.path.exists(cardkingdom_sync.CACHE_FILE):
-    scheduler.add_job(scheduled_ck_sync, id='startup_ck_sync')
+# if not os.path.exists(cardkingdom_sync.CACHE_FILE):
+#     scheduler.add_job(scheduled_ck_sync, id='startup_ck_sync')
 
 scheduler.start()
 
@@ -189,8 +189,8 @@ def get_ck_price_endpoint():
     if not name:
         return jsonify({"error": "Missing card name"}), 400
         
-    price = cardkingdom_sync.get_ck_price(name, edition, is_foil)
-    return jsonify({"price": price})
+    # price = cardkingdom_sync.get_ck_price(name, edition, is_foil)
+    return jsonify({"price": 0, "message": "Card Kingdom disabled"})
 
 @app.route("/api/update_schedule", methods=["POST"])
 def update_schedule():
@@ -207,8 +207,8 @@ def get_schedule():
 
 @app.route("/api/sync_ck", methods=["POST"])
 def sync_ck_manual():
-    scheduler.add_job(scheduled_ck_sync, id=f'manual_ck_sync_{int(time.time())}')
-    return jsonify({"message": "Started"}), 202
+    # scheduler.add_job(scheduled_ck_sync, id=f'manual_ck_sync_{int(time.time())}')
+    return jsonify({"message": "Card Kingdom sync is disabled"}), 400
 
 @app.route("/api/update_prices_manual", methods=["POST"])
 def update_prices_manual():
@@ -218,9 +218,13 @@ def update_prices_manual():
 @app.route("/api/reporte", methods=["GET"])
 def download_report():
     from flask import send_from_directory
-    path = os.path.join(os.path.dirname(__file__), 'static', 'ultimo_reporte.csv')
-    if not os.path.exists(path): return jsonify({"error": "No report"}), 404
-    return send_from_directory(os.path.dirname(path), 'ultimo_reporte.csv', as_attachment=True)
+    BASE_DIR = os.path.dirname(os.path.abspath(__file__))
+    static_dir = os.path.join(BASE_DIR, 'static')
+    filename = 'ultimo_reporte.csv'
+    path = os.path.join(static_dir, filename)
+    if not os.path.exists(path): 
+        return jsonify({"error": "No existe el reporte. Es posible que la sincronización no haya terminado o haya fallado al inicio."}), 404
+    return send_from_directory(static_dir, filename, as_attachment=True)
 
 @app.route("/api/logs", methods=["GET"])
 def get_logs():

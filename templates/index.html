@@ -21,7 +21,7 @@
        var AppBridge = window['app-bridge'];
        var createApp = AppBridge.default;
        var app = createApp({
-         apiKey: 'cb862b15f895818f47d43a6fc866ee04', // ID de cliente oficial
+         apiKey: 'cb062b15f895810f47d43a6fc866ee04', // ID de cliente oficial
          host: urlParams.get('host'),
          forceRedirect: true
        });
@@ -1003,9 +1003,6 @@
         </button>
       </div>
       <div style="display:flex; gap:10px; margin-left: auto;">
-        <button id="btnSyncCK" class="btn btn-ghost" onclick="syncCK()" style="padding:6px 14px; font-size:0.85rem; border-color:var(--gold); color:var(--gold);">
-           🔄 Actualizar Card Kingdom
-        </button>
         <button id="btnForceSync" class="btn btn-ghost" onclick="forceScryfallSync()" style="padding:6px 14px; font-size:0.85rem; border-color:var(--success); color:var(--success);">
            🚀 Forzar Sync Scryfall (Total)
         </button>
@@ -1291,23 +1288,7 @@
           const identified = await identifyCard(item.dataUrl, apiKey);
           const scryfallCard = await fetchScryfall(identified);
           
-          // --- NUEVO: Buscar precios en Card Kingdom (Normal y Foil) ---
-          try {
-            const ckUrlBase = `${API_BASE}/api/get_ck_price`;
-            const [ckRes, ckFoilRes] = await Promise.all([
-              fetch(`${ckUrlBase}?name=sfid:${scryfallCard.id}&foil=false`),
-              fetch(`${ckUrlBase}?name=sfid:${scryfallCard.id}&foil=true`)
-            ]);
-            
-            if (ckRes.ok) {
-              const ckData = await ckRes.json();
-              if (ckData.price) scryfallCard.ck_price = ckData.price;
-            }
-            if (ckFoilRes.ok) {
-              const ckFoilData = await ckFoilRes.json();
-              if (ckFoilData.price) scryfallCard.ck_price_foil = ckFoilData.price;
-            }
-          } catch(e) { console.warn("CK Price fetch failed", e); }
+          // Precios de CK eliminados
 
           const resultIndex = results.length;
           const domId = cardEl.id;
@@ -1639,29 +1620,6 @@ Be precise. The Set Code and Collector Number are the most important fields.`;
       }
     }
 
-    async function syncCK() {
-      const btn = document.getElementById('btnSyncCK');
-      const originalText = btn.innerHTML;
-      btn.innerHTML = `<div class="spinner" style="width:12px; height:12px; margin-right:4px;"></div> Sincronizando...`;
-      btn.disabled = true;
-
-      try {
-        const res = await fetch(`${API_BASE}/api/sync_ck`, { method: 'POST' });
-        const data = await res.json();
-        if(res.ok || res.status === 202) {
-          showToast("⏳ Sincronización CK iniciada en segundo plano. Esto puede tardar 1-2 minutos.");
-        } else {
-          throw new Error(data.error || "Error al sincronizar");
-        }
-      } catch(e) {
-        alert("Error: " + e.message);
-      } finally {
-        setTimeout(() => {
-          btn.innerHTML = originalText;
-          btn.disabled = false;
-        }, 3000);
-      }
-    }
 
     async function forceScryfallSync() {
       const btn = document.getElementById('btnForceSync');

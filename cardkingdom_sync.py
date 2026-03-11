@@ -11,7 +11,7 @@ def download_pricelist():
     url = "https://api.cardkingdom.com/api/v2/pricelist"
     print(f"Downloading Card Kingdom pricelist from {url}...")
     headers = {
-        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36"
+        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36"
     }
     try:
         # 1. Descargar a archivo temporal para no agotar la RAM
@@ -33,7 +33,9 @@ def download_pricelist():
         with open(temp_raw_file, 'r', encoding='utf-8') as f:
             # "data.item" means iterate over elements inside of the "data" array
             cards = ijson.items(f, 'data.item')
+            count = 0
             for card in cards:
+                count += 1
                 name = card.get("name") or card.get("nm")
                 edition = card.get("edition")
                 price = card.get("price_retail") or card.get("sell_price") or card.get("price")
@@ -49,6 +51,7 @@ def download_pricelist():
                     if sf_id:
                         key_id = f"sfid:{sf_id}|{foil_key}"
                         processed_cache[key_id] = float(price)
+            print(f"Total cards iterated: {count}")
         
         with open(CACHE_FILE, "w", encoding="utf-8") as f:
             json.dump(processed_cache, f)
