@@ -217,14 +217,31 @@ def update_prices_manual():
 
 @app.route("/api/reporte", methods=["GET"])
 def download_report():
-    from flask import send_from_directory
+    from flask import send_from_directory, Response
     BASE_DIR = os.path.dirname(os.path.abspath(__file__))
     static_dir = os.path.join(BASE_DIR, 'static')
     filename = 'ultimo_reporte.csv'
     path = os.path.join(static_dir, filename)
-    if not os.path.exists(path): 
-        return jsonify({"error": "No existe el reporte. Es posible que la sincronización no haya terminado o haya fallado al inicio."}), 404
-    return send_from_directory(static_dir, filename, as_attachment=True)
+    
+    # Try local file first
+    if os.path.exists(path):
+        return send_from_directory(static_dir, filename, as_attachment=True)
+    
+    # Fallback: fetch from Supabase (Render ephemeral filesystem)
+    if supabase:
+        try:
+            res = supabase.table("sync_history").select("report_csv").eq("report_available", True).order("started_at", desc=True).limit(1).execute()
+            if res.data and res.data[0].get("report_csv"):
+                csv_content = res.data[0]["report_csv"]
+                return Response(
+                    csv_content,
+                    mimetype="text/csv",
+                    headers={"Content-Disposition": "attachment; filename=ultimo_reporte.csv"}
+                )
+        except Exception as e:
+            print(f"Error fetching report from Supabase: {e}")
+    
+    return jsonify({"error": "No existe el reporte. Ejecuta una sincronización primero."}), 404
 
 @app.route("/api/logs", methods=["GET"])
 def get_logs():

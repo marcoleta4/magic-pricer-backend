@@ -41,6 +41,15 @@ def _update_sync_history(sync_id, **fields):
     try:
         supabase.table("sync_history").update(fields).eq("id", sync_id).execute()
     except Exception as e:
+        # If report_csv column doesn't exist yet, retry without it
+        if "report_csv" in fields and "report_csv" in str(e):
+            fields_copy = {k: v for k, v in fields.items() if k != "report_csv"}
+            try:
+                supabase.table("sync_history").update(fields_copy).eq("id", sync_id).execute()
+                print("Warning: report_csv column not found. Report saved to local file only.")
+                return
+            except Exception as e2:
+                print(f"Error updating sync_history (retry): {e2}")
         print(f"Error updating sync_history: {e}")
 
 def get_config_margin():
@@ -110,6 +119,7 @@ def calculate_clp_price(usd_str, eur_str, margin_pct=1.30):
     if eur_str:
         try: eur = float(eur_str)
         except: pass
+    vals = []
     if usd is not None: vals.append(usd)
     if eur is not None: vals.append(eur * EUR_TO_USD)
     if not vals:
@@ -305,29 +315,37 @@ def _run_main():
                             "Foil": "Sí" if is_foil else "No",
                             "Precio Anterior": variant_data["current_price"],
                             "Precio Scryfall": card_info.get("scryfall_clp") or 0,
-                            "Precio CK USD": card_info.get("ck_usd") or 0,
                             "Precio Nuevo": new_price_clp
                         })
 
         print(f"Finished. Updated {updates_made} variants.")
         
-        fieldnames = ["Fecha", "Carta", "Set", "Set Name", "Foil", "Precio Anterior", "Precio Scryfall", "Precio CK USD", "Precio Nuevo"]
-        with open(report_path, 'w', newline='', encoding='utf-8') as f:
-            writer = csv.DictWriter(f, fieldnames=fieldnames)
-            writer.writeheader()
-            if not report_data:
-                writer.writerow({"Fecha": datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S"), "Carta": "SIN CAMBIOS DETECTADOS", "Set": "-", "Set Name": "-", "Foil": "-", "Precio Anterior": "-", "Precio Scryfall": "-", "Precio CK USD": "-", "Precio Nuevo": "-"})
-            else:
-                for row in report_data:
-                    writer.writerow(row)
+        # Build CSV content in memory
+        import io
+        fieldnames = ["Fecha", "Carta", "Set", "Set Name", "Foil", "Precio Anterior", "Precio Scryfall", "Precio Nuevo"]
+        csv_buffer = io.StringIO()
+        writer = csv.DictWriter(csv_buffer, fieldnames=fieldnames)
+        writer.writeheader()
+        if not report_data:
+            writer.writerow({"Fecha": datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S"), "Carta": "SIN CAMBIOS DETECTADOS", "Set": "-", "Set Name": "-", "Foil": "-", "Precio Anterior": "-", "Precio Scryfall": "-", "Precio Nuevo": "-"})
+        else:
+            for row in report_data:
+                writer.writerow(row)
+        csv_content = csv_buffer.getvalue()
         
+        # Write to local file (fallback)
+        with open(report_path, 'w', newline='', encoding='utf-8') as f:
+            f.write(csv_content)
+        
+        # Store CSV in Supabase so it persists across Render restarts
         _update_sync_history(
             sync_id,
             status="completed",
             finished_at=datetime.datetime.now().isoformat(),
             cards_processed=total_cards,
             updates_made=updates_made,
-            report_available=True
+            report_available=True,
+            report_csv=csv_content
         )
         sync_status = "completed"
     except Exception as e:
